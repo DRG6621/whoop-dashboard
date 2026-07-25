@@ -39,7 +39,12 @@ def refresh_whoop():
         print(f"WHOOP token refresh failed: {r.status_code} {r.text}")
         sys.exit(1)
     print("â WHOOP token refreshed")
-    return r.json()
+    data = r.json()
+    # WHOOP rotates refresh tokens — save the new one so workflow updates the secret
+    new_rt = data.get("refresh_token", "")
+    if new_rt:
+        Path("/tmp/new_whoop_token").write_text(new_rt)
+    return data
 
 def refresh_strava():
     r = requests.post(STRAVA_TOKEN, data={
