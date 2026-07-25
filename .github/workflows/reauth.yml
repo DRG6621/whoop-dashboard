@@ -1,0 +1,48 @@
+name: Reauth WHOOP Token
+
+on:
+  workflow_dispatch:
+    inputs:
+      auth_code:
+        description: 'Auth code from WHOOP redirect URL (?code=...)'
+        required: true
+
+permissions:
+  contents: read
+  secrets: write
+
+jobs:
+  reauth:
+    runs-on: ubuntu-latest
+    env:
+      WHOOP_CLIENT_ID:     ${{ secrets.WHOOP_CLIENT_ID }}
+      WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
+    steps:
+      - name: Exchange code and save refresh token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTH_CODE: ${{ inputs.auth_code }}
+        run: |
+          RESPONSE=$(curl -s -X POST "https://api.prod.whoop.com/oauth/oauth2/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "grant_type=authorization_code" \
+            --data-urlencode "code=${AUTH_CODE}" \
+            --data-urlencode "client_id=${WHOOP_CLIENT_ID}" \
+            --data-urlencode "client_secret=${WHOOP_CLIENT_SECRET}" \
+            --data-urlencode "redirect_uri=http://localhost:8080/callback")
+
+          echo "Status check..."
+          ERROR=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null)
+          if [ -n "$ERROR" ]; then
+            echo "ERROR: $RESPONSE"
+            exit 1
+          fi
+
+          NEW_REFRESH=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['refresh_token'])")
+          if [ -z "$NEW_REFRESH" ]; then
+            echo "ERROR: no refresh_token in response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "$NEW_REFRESH" | gh secret set WHOOP_REFRESH_TOKEN --repo "$GITHUB_REPOSITORY"
+          echo "â WHOOP_REFRESH_TOKEN updated successfully"
