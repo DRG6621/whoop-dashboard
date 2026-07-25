@@ -22,7 +22,7 @@ WHOOP_TOKEN  = "https://api.prod.whoop.com/oauth/oauth2/token"
 STRAVA_BASE  = "https://www.strava.com/api/v3"
 STRAVA_TOKEN = "https://www.strava.com/oauth/token"
 DAYS_BACK    = int(os.environ.get("DAYS_BACK", "30"))
-FTP          = 290
+FTP          = 300
 OUTPUT       = Path("index.html")
 
 
@@ -277,12 +277,12 @@ def build_html(whoop, strava, tp=None):
             rc_bg = "#f0fdf4"; rc_br = "#86efac"; rc_icon = "🚴"
             rc_title = "Go Time — Readiness " + str(readiness) + "%"
             rc_body  = ("WHOOP " + str(round(t_rec)) + "% recovery with " + str(w7_effort) +
-                        " RE this week. Body is ready — consider threshold (275–305W) or sweet spot (246–275W).")
+                        " RE this week. Body is ready — consider threshold (285–315W) or sweet spot (255–285W).")
         elif readiness >= 50:
             rc_bg = "#fefce8"; rc_br = "#fde047"; rc_icon = "🚴"
             rc_title = "Moderate Readiness (" + str(readiness) + "%) — Stay Controlled"
             rc_body  = ("Recovery " + str(round(t_rec)) + "% + " + str(w7_effort) +
-                        " RE this week. Zone 2 only today (160–218W, HR 121–150). Save intensity for when WHOOP shows green.")
+                        " RE this week. Zone 2 only today (165–225W, HR 121–150). Save intensity for when WHOOP shows green.")
         else:
             rc_bg = "#fef2f2"; rc_br = "#fca5a5"; rc_icon = "🛌"
             rc_title = "Rest Day — Readiness " + str(readiness) + "%"
@@ -317,7 +317,7 @@ def build_html(whoop, strava, tp=None):
         if t_rec >= 70 and sf >= 55:
             banner = ('<div class="banner banner-purple"><span>🔀</span><span>'
                       'Body says go (' + str(round(t_rec)) + '% recovery) but load is piling up (' + str(w7_effort) +
-                      ' RE / 7 days). Ride Zone 2 today (160–218W) — this is how aerobic base compounds without digging a hole.'
+                      ' RE / 7 days). Ride Zone 2 today (165–225W) — this is how aerobic base compounds without digging a hole.'
                       '</span></div>')
         elif t_rec < 45 and sf < 30:
             banner = ('<div class="banner banner-amber"><span>⚠️</span><span>'
@@ -384,9 +384,9 @@ def build_html(whoop, strava, tp=None):
 
     if readiness is not None and readiness >= 72 and sf < 55:
         g_nxt = ("Excellent readiness, manageable load — ideal for quality. "
-                 "2×20 min sweet spot (246–275W, 85–95% FTP) or 3×12 min threshold (275–305W). Full 20-min Z2 warmup first.")
+                 "2×20 min sweet spot (255–285W, 85–95% FTP) or 3×12 min threshold (285–315W). Full 20-min Z2 warmup first.")
     elif readiness is not None and readiness >= 72:
-        g_nxt = ("Good recovery but load is high — best next session is 90-min Zone 2 endurance (160–218W). "
+        g_nxt = ("Good recovery but load is high — best next session is 90-min Zone 2 endurance (165–225W). "
                  "Reinforces aerobic adaptation without adding fatigue.")
     else:
         g_nxt = ("Let the body recover. Next quality session: when WHOOP shows ≥70%, "
@@ -530,10 +530,10 @@ const BASE = { title: REC.title ? REC.title.textContent : '', body: REC.body ? R
 function zone(r){
   if(r>=72) return {bg:'#f0fdf4',br:'#86efac',icon:'🚴',bar:'#22c55e',
     title:'Go Time \u2014 Readiness '+r+'%',
-    body:'Quality day: threshold (275\u2013305W) or sweet spot (246\u2013275W). Full Z2 warmup first.'};
+    body:'Quality day: threshold (285\u2013315W) or sweet spot (255\u2013285W). Full Z2 warmup first.'};
   if(r>=50) return {bg:'#fefce8',br:'#fde047',icon:'🚴',bar:'#f59e0b',
     title:'Moderate Readiness ('+r+'%) \u2014 Stay Controlled',
-    body:'Zone 2 only (160\u2013218W, HR 121\u2013150). Save intensity for a green day.'};
+    body:'Zone 2 only (165\u2013225W, HR 121\u2013150). Save intensity for a green day.'};
   return {bg:'#fef2f2',br:'#fca5a5',icon:'😴',bar:'#ef4444',
     title:'Rest Day \u2014 Readiness '+r+'%',
     body:'Rest or a very easy spin. Prioritize 8+ hrs sleep tonight.'};
