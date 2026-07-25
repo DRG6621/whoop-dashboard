@@ -4,10 +4,12 @@ on:
   schedule:
     - cron: '0 10 * * *'   # 10:00 UTC = 6:00 AM Eastern
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/update.yml'
 
 permissions:
   contents: write
-  secrets: write
 
 jobs:
   update:
@@ -15,7 +17,6 @@ jobs:
     env:
       WHOOP_CLIENT_ID:      ${{ secrets.WHOOP_CLIENT_ID }}
       WHOOP_CLIENT_SECRET:  ${{ secrets.WHOOP_CLIENT_SECRET }}
-      WHOOP_REFRESH_TOKEN:  ${{ secrets.WHOOP_REFRESH_TOKEN }}
       STRAVA_CLIENT_ID:     ${{ secrets.STRAVA_CLIENT_ID }}
       STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
       STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
@@ -32,23 +33,27 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      - name: Decrypt WHOOP refresh token
+        run: |
+          TOKEN=$(openssl enc -aes-256-cbc -pbkdf2 -d -base64 -A -in .whoop_token -pass pass:"$WHOOP_CLIENT_SECRET")
+          echo "::add-mask::$TOKEN"
+          echo "WHOOP_REFRESH_TOKEN=$TOKEN" >> $GITHUB_ENV
+
       - name: Build combined dashboard
         run: python combined_fetch.py
 
-      - name: Rotate WHOOP refresh token
+      - name: Save rotated WHOOP token
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -f /tmp/new_whoop_token ]; then
-            gh secret set WHOOP_REFRESH_TOKEN --repo ${{ github.repository }} --body "$(cat /tmp/new_whoop_token)"
-            echo "â WHOOP refresh token rotated"
+            openssl enc -aes-256-cbc -pbkdf2 -salt -pass pass:"$WHOOP_CLIENT_SECRET" -base64 -A -in /tmp/new_whoop_token > .whoop_token
+            echo "Rotated token saved"
           fi
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html
+          git add index.html .whoop_token
           git diff --cached --quiet || git commit -m "Update dashboard $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
