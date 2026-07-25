@@ -7,8 +7,7 @@ on:
       - '.github/workflows/reauth.yml'
 
 permissions:
-  contents: read
-  secrets: write
+  contents: write
 
 jobs:
   reauth:
@@ -18,9 +17,9 @@ jobs:
       WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
       AUTH_CODE:           ${{ secrets.WHOOP_AUTH_CODE }}
     steps:
-      - name: Exchange code and save refresh token
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v4
+
+      - name: Exchange code and save encrypted refresh token
         run: |
           RESPONSE=$(curl -s -X POST "https://api.prod.whoop.com/oauth/oauth2/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
@@ -38,9 +37,17 @@ jobs:
 
           NEW_REFRESH=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['refresh_token'])")
           if [ -z "$NEW_REFRESH" ]; then
-            echo "ERROR: no refresh_token in response: $RESPONSE"
+            echo "ERROR: no refresh_token in response"
             exit 1
           fi
 
-          echo "$NEW_REFRESH" | gh secret set WHOOP_REFRESH_TOKEN --repo "$GITHUB_REPOSITORY"
-          echo "WHOOP_REFRESH_TOKEN updated successfully"
+          echo "$NEW_REFRESH" | openssl enc -aes-256-cbc -pbkdf2 -salt -pass pass:"$WHOOP_CLIENT_SECRET" -base64 -A > .whoop_token
+          echo "Token exchanged and encrypted OK"
+
+      - name: Commit encrypted token
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .whoop_token
+          git commit -m "Store encrypted WHOOP refresh token"
+          git push
