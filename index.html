@@ -46,6 +46,11 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 #inp-save{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer}
 #inp-status{font-size:.75rem;color:#16a34a;margin-left:8px}
 .note-line{margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;color:#334155}
+.tp-item{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
+.tp-item:last-child{border-bottom:none}
+.tp-date{font-size:.72rem;font-weight:700;color:#7c3aed;min-width:70px}
+.tp-name{font-size:.85rem;font-weight:600}
+.tp-desc{font-size:.75rem;color:#64748b;width:100%;padding-left:80px}
 @media(max-width:700px){.inputs-row{grid-template-columns:1fr}}
 @media(max-width:700px){.stats{grid-template-columns:repeat(3,1fr)}.grid2,.grid3{grid-template-columns:1fr}}
 @media(max-width:420px){.stats{grid-template-columns:repeat(2,1fr)}}
@@ -55,7 +60,7 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 
 <h1>&#9889; Keith's Training + Recovery Dashboard</h1>
 <div class="sub">
-  <span>Updated July 25, 2026 23:37 UTC &nbsp;&middot;&nbsp; 30 days</span>
+  <span>Updated July 25, 2026 23:47 UTC &nbsp;&middot;&nbsp; 30 days</span>
   <span class="pill">🟢 WHOOP + Strava</span>
 </div>
 
@@ -90,6 +95,8 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
   </div>
   <button id="inp-save">Save &amp; update recommendation</button><span id="inp-status"></span>
 </div>
+
+<div class="card"><h2>Up Next from TrainingPeaks <span style="font-weight:400">(planned workouts)</span></h2><div class="tp-list"><div class="tp-item"><span class="tp-date">Sat Jul 25</span><span class="tp-name">Bike: 4 x 10 Sub LT high rmp/20 min Sub LT\, Big gear bursts</span><span class="tp-desc">Workout type: Bike Warm-up: 20-minute with at least 5 mins of tempo in very big gear. Then we will go for 3 x 10 Sub LT efforts with 5 minutes recovery after ea</span></div><div class="tp-item"><span class="tp-date">Sun Jul 26</span><span class="tp-name">MTB: Gravel Skills: Max Braking\, Slalom</span><span class="tp-desc">Workout type: MTB Get in a good technical skills ride with some trail. Practice repeating a couple of hard-to-ride single tracks. On a packed gravel or grassy h</span></div><div class="tp-item"><span class="tp-date">Sat Aug 15</span><span class="tp-name">LOST RIVER CLASSIC GRAVEL</span></div><div class="tp-item"><span class="tp-date">Sat Oct 17</span><span class="tp-name">A: Life Time Big Sugar Gravel</span></div></div></div>
 
 
 
