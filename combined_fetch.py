@@ -391,9 +391,9 @@ new Chart(document.getElementById('dual').getContext('2d'), {
     plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
     scales:{
       x:{grid:{display:false},ticks:{maxTicksLimit:8,maxRotation:0}},
-      y1:{type:'linear',position;'left',beginAtZero:true,grid:{color:'#f1f5f9'},
+      y1:{type:'linear',position:'left',beginAtZero:true,grid:{color:'#f1f5f9'},
           title:{display:true,text:'Relative Effort',font:{size:10},color:'#94a3b8'}},
-      y2:{type:'linear',position;'right',min:0,max:100,grid:{drawOnChartArea:false},
+      y2:{type:'linear',position:'right',min:0,max:100,grid:{drawOnChartArea:false},
           title:{display:true,text:'Recovery %',font:{size:10},color:'#22c55e'},
           ticks:{color:'#22c55e'}}
     }
