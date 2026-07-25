@@ -132,16 +132,23 @@ def fetch_whoop(token):
     return out
 
 def fetch_strava(token):
-    after  = int((datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)).timestamp())
+    after  = int((datetime.now(timezone.utc) - timedelta(days=max(DAYS_BACK, 90))).timestamp())
     acts   = strava_get("/athlete/activities", token, {"after": after})
     print(f"  Strava: {len(acts)} activities")
     by_day = {}
     for a in acts:
         k = a["start_date_local"][:10]
-        d = by_day.setdefault(k, {"effort": 0, "kj": 0, "secs": 0})
+        d = by_day.setdefault(k, {"effort": 0, "kj": 0, "secs": 0, "tss": 0})
         d["effort"] += (a.get("suffer_score") or 0)
         d["kj"]     += (a.get("kilojoules")   or 0)
         d["secs"]   += (a.get("moving_time")  or 0)
+        # TSS: power-based when available (weighted avg watts as NP), else Relative Effort
+        w  = a.get("weighted_average_watts") or a.get("average_watts") or 0
+        mt = a.get("moving_time") or 0
+        if w and mt:
+            d["tss"] += mt * w * (w / FTP) / (FTP * 3600.0) * 100.0
+        else:
+            d["tss"] += (a.get("suffer_score") or 0)
     for d in by_day.values():
         d["cal"] = round(d["kj"])   # kJ ≈ kcal for cyclists
         d["hrs"] = round(d["secs"] / 3600, 2)
@@ -390,6 +397,34 @@ def build_html(whoop, strava, tp=None):
     pill_color = "#7c3aed" if has_w else "#c2410c"
     pill_text  = "🟢 WHOOP + Strava" if has_w else "🟠 Strava + WHOOP (no score today)"
 
+    # PMC: Fitness (CTL) / Fatigue (ATL) / Form (TSB) from daily TSS, TrainingPeaks-style
+    ctl, atl = 0.0, 0.0
+    ctl_series, atl_series, tsb_series, tss_series, pmc_labels = [], [], [], [], []
+    for i in range(89, -1, -1):
+        dd = now - timedelta(days=i)
+        kk = dd.strftime("%Y-%m-%d")
+        day_tss = strava.get(kk, {}).get("tss", 0)
+        tsb = ctl - atl
+        ctl = ctl + (day_tss - ctl) / 42.0
+        atl = atl + (day_tss - atl) / 7.0
+        if i < DAYS_BACK:
+            pmc_labels.append(dd.strftime("%b ") + str(dd.day))
+            tss_series.append(round(day_tss))
+            ctl_series.append(round(ctl, 1))
+            atl_series.append(round(atl, 1))
+            tsb_series.append(round(tsb, 1))
+    ctl_now, atl_now, tsb_now = ctl_series[-1], atl_series[-1], tsb_series[-1]
+    ramp = round(ctl_series[-1] - ctl_series[-8], 1) if len(ctl_series) >= 8 else 0.0
+
+    pmc_section = ('<div class="card"><h2>Fitness / Fatigue / Form &nbsp;<span style="font-weight:400">'
+                   '(TrainingPeaks-style, computed from Strava power at FTP ' + str(FTP) + 'W)</span></h2>'
+                   '<div class="pmc-strip">'
+                   '<span style="color:#3b82f6"><b>Fitness (CTL): ' + str(ctl_now) + '</b></span>'
+                   '<span style="color:#ec4899"><b>Fatigue (ATL): ' + str(atl_now) + '</b></span>'
+                   '<span style="color:#f59e0b"><b>Form (TSB): ' + ('+' if tsb_now >= 0 else '') + str(tsb_now) + '</b></span>'
+                   '<span style="color:#8b5cf6"><b>Ramp: ' + ('+' if ramp >= 0 else '') + str(ramp) + ' CTL/wk</b></span>'
+                   '</div><div class="ch-tall"><canvas id="pmcc"></canvas></div></div>')
+
     # TrainingPeaks planned workouts section
     def esc(s):
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -419,6 +454,10 @@ def build_html(whoop, strava, tp=None):
         "hrv_avg":  rolling7([d["hrv"]      for d in days]),
         "rec_avg":  rolling7([d["recovery"] for d in days]),
         "sleep":    [d["sleep"]    for d in days],
+        "pmc_labels": pmc_labels,
+        "ctl":      ctl_series,
+        "atl":      atl_series,
+        "tsb":      tsb_series,
         "meta":     {"readiness": readiness, "recovery": t_rec, "load": w7_effort},
     })
 
@@ -471,6 +510,12 @@ new Chart(document.getElementById('recc').getContext('2d'),{type:'line',data:{la
 new Chart(document.getElementById('slpc').getContext('2d'),{type:'line',data:{labels:D.labels,datasets:[
   {label:'Sleep',data:D.sleep,borderColor:'#93c5fd',borderWidth:1.5,backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:0.3,pointRadius:0}
 ]},options:Object.assign({},base)});
+new Chart(document.getElementById('pmcc').getContext('2d'),{type:'line',data:{labels:D.pmc_labels,datasets:[
+  {label:'Fitness (CTL)',data:D.ctl,borderColor:'#3b82f6',borderWidth:2.5,tension:0.35,pointRadius:0},
+  {label:'Fatigue (ATL)',data:D.atl,borderColor:'#ec4899',borderWidth:1.5,tension:0.35,pointRadius:0},
+  {label:'Form (TSB)',data:D.tsb,borderColor:'#f59e0b',borderWidth:2,tension:0.35,pointRadius:0,
+   fill:{target:{value:0},above:'rgba(245,158,11,.06)',below:'rgba(239,68,68,.10)'}}
+]},options:Object.assign({},base,{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:18,font:{size:10}}},tooltip:{mode:'index',intersect:false}}})});
 
 const META = D.meta || {};
 const REC = {
@@ -583,6 +628,7 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
 #inp-save{{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer}}
 #inp-status{{font-size:.75rem;color:#16a34a;margin-left:8px}}
 .note-line{{margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;color:#334155}}
+.pmc-strip{{display:flex;gap:18px;font-size:.8rem;margin-bottom:12px;flex-wrap:wrap}}
 .tp-item{{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}}
 .tp-item:last-child{{border-bottom:none}}
 .tp-date{{font-size:.72rem;font-weight:700;color:#7c3aed;min-width:70px}}
@@ -677,6 +723,8 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
   <h2>30-Day Training Load vs. WHOOP Recovery &nbsp;<span style="font-weight:400">(Strava bars &middot; WHOOP recovery line)</span></h2>
   <div class="ch-tall"><canvas id="dual"></canvas></div>
 </div>
+
+{pmc_section}
 
 <div class="grid2">
   <div class="card"><h2>HRV (+ 7-day avg)</h2><div class="ch-sm"><canvas id="hrvc"></canvas></div></div>
