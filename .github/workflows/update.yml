@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  secrets: write
 
 jobs:
   update:
@@ -33,6 +34,16 @@ jobs:
 
       - name: Build combined dashboard
         run: python combined_fetch.py
+
+      - name: Rotate WHOOP refresh token
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f /tmp/new_whoop_token ]; then
+            gh secret set WHOOP_REFRESH_TOKEN --repo ${{ github.repository }} --body "$(cat /tmp/new_whoop_token)"
+            echo "â WHOOP refresh token rotated"
+          fi
 
       - name: Commit and push
         run: |
