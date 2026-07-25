@@ -1,8 +1,8 @@
 """
-combined_fetch.py â runs in GitHub Actions.
+combined_fetch.py — runs in GitHub Actions.
 Fetches WHOOP recovery + Strava activity data and writes a combined index.html dashboard.
 
-Required secrets (repo Settings â Secrets and variables â Actions):
+Required secrets (repo Settings → Secrets and variables → Actions):
   WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET, WHOOP_REFRESH_TOKEN
   STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_REFRESH_TOKEN
 """
@@ -26,7 +26,7 @@ FTP          = 290
 OUTPUT       = Path("index.html")
 
 
-# ââ TOKEN REFRESH âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── TOKEN REFRESH ─────────────────────────────────────────────────────────────
 
 def refresh_whoop():
     r = requests.post(WHOOP_TOKEN, data={
@@ -38,7 +38,7 @@ def refresh_whoop():
     if r.status_code != 200:
         print(f"WHOOP token refresh failed: {r.status_code} {r.text}")
         sys.exit(1)
-    print("â WHOOP token refreshed")
+    print("✓ WHOOP token refreshed")
     data = r.json()
     # WHOOP rotates refresh tokens — save the new one so workflow updates the secret
     new_rt = data.get("refresh_token", "")
@@ -56,11 +56,11 @@ def refresh_strava():
     if r.status_code != 200:
         print(f"Strava token refresh failed: {r.status_code} {r.text}")
         sys.exit(1)
-    print("â Strava token refreshed")
+    print("✓ Strava token refreshed")
     return r.json()
 
 
-# ââ API HELPERS âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── API HELPERS ───────────────────────────────────────────────────────────────
 
 def whoop_get(path, token, params=None):
     h = {"Authorization": f"Bearer {token['access_token']}"}
@@ -101,7 +101,7 @@ def strava_get(path, token, params=None):
     return records
 
 
-# ââ DATA FETCHERS âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── DATA FETCHERS ─────────────────────────────────────────────────────────────
 
 def fetch_whoop(token):
     start = (datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -143,12 +143,12 @@ def fetch_strava(token):
         d["kj"]     += (a.get("kilojoules")   or 0)
         d["secs"]   += (a.get("moving_time")  or 0)
     for d in by_day.values():
-        d["cal"] = round(d["kj"])   # kJ â kcal for cyclists
+        d["cal"] = round(d["kj"])   # kJ ≈ kcal for cyclists
         d["hrs"] = round(d["secs"] / 3600, 2)
     return by_day
 
 
-# ââ STAT HELPERS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── STAT HELPERS ──────────────────────────────────────────────────────────────
 
 def rolling7(vals):
     out = []
@@ -162,7 +162,7 @@ def safe_avg(lst, p=1):
     return round(sum(v) / len(v), p) if v else None
 
 
-# ââ HTML BUILDER ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ── HTML BUILDER ──────────────────────────────────────────────────────────────
 
 def build_html(whoop, strava):
     now = datetime.now(timezone.utc)
@@ -204,7 +204,7 @@ def build_html(whoop, strava):
     t_rhr    = today_d.get("rhr")
     has_w    = bool(t_rec)
 
-    # Strava fatigue (0â100)
+    # Strava fatigue (0–100)
     sf = (10 if w7_effort < 200 else
           28 if w7_effort < 350 else
           55 if w7_effort < 500 else
@@ -227,28 +227,28 @@ def build_html(whoop, strava):
     # Recommendation card
     if readiness is not None:
         if readiness >= 72:
-            rc_bg = "#f0fdf4"; rc_br = "#86efac"; rc_icon = "ð´"
-            rc_title = "Go Time â Readiness " + str(readiness) + "%"
+            rc_bg = "#f0fdf4"; rc_br = "#86efac"; rc_icon = "🚴"
+            rc_title = "Go Time — Readiness " + str(readiness) + "%"
             rc_body  = ("WHOOP " + str(round(t_rec)) + "% recovery with " + str(w7_effort) +
-                        " RE this week. Body is ready â consider threshold (275â305W) or sweet spot (246â275W).")
+                        " RE this week. Body is ready — consider threshold (275–305W) or sweet spot (246–275W).")
         elif readiness >= 50:
-            rc_bg = "#fefce8"; rc_br = "#fde047"; rc_icon = "ð´"
-            rc_title = "Moderate Readiness (" + str(readiness) + "%) â Stay Controlled"
+            rc_bg = "#fefce8"; rc_br = "#fde047"; rc_icon = "🚴"
+            rc_title = "Moderate Readiness (" + str(readiness) + "%) — Stay Controlled"
             rc_body  = ("Recovery " + str(round(t_rec)) + "% + " + str(w7_effort) +
-                        " RE this week. Zone 2 only today (160â218W, HR 121â150). Save intensity for when WHOOP shows green.")
+                        " RE this week. Zone 2 only today (160–218W, HR 121–150). Save intensity for when WHOOP shows green.")
         else:
-            rc_bg = "#fef2f2"; rc_br = "#fca5a5"; rc_icon = "ð"
-            rc_title = "Rest Day â Readiness " + str(readiness) + "%"
+            rc_bg = "#fef2f2"; rc_br = "#fca5a5"; rc_icon = "🛌"
+            rc_title = "Rest Day — Readiness " + str(readiness) + "%"
             rc_body  = ("WHOOP " + str(round(t_rec)) + "% recovery signals the body needs it. " +
-                        "Hard training today builds no fitness â rest does. Target 8+ hrs sleep.")
+                        "Hard training today builds no fitness — rest does. Target 8+ hrs sleep.")
     elif sf >= 72:
-        rc_bg = "#fef2f2"; rc_br = "#fca5a5"; rc_icon = "ð"
-        rc_title = "High Training Load â Consider Rest"
-        rc_body  = str(w7_effort) + " RE over 7 days. WHOOP data not available today â go by feel."
+        rc_bg = "#fef2f2"; rc_br = "#fca5a5"; rc_icon = "🛌"
+        rc_title = "High Training Load — Consider Rest"
+        rc_body  = str(w7_effort) + " RE over 7 days. WHOOP data not available today — go by feel."
     else:
-        rc_bg = "#f0fdf4"; rc_br = "#86efac"; rc_icon = "ð´"
+        rc_bg = "#f0fdf4"; rc_br = "#86efac"; rc_icon = "🚴"
         rc_title = "Training Load Manageable"
-        rc_body  = str(w7_effort) + " RE this week â capacity looks good. WHOOP score not available today."
+        rc_body  = str(w7_effort) + " RE this week — capacity looks good. WHOOP score not available today."
 
     bar_c = ("#22c55e" if readiness is None or readiness >= 72 else
              "#f59e0b" if readiness >= 50 else "#ef4444")
@@ -268,87 +268,87 @@ def build_html(whoop, strava):
     banner = ""
     if has_w:
         if t_rec >= 70 and sf >= 55:
-            banner = ('<div class="banner banner-purple"><span>ð</span><span>'
+            banner = ('<div class="banner banner-purple"><span>🔀</span><span>'
                       'Body says go (' + str(round(t_rec)) + '% recovery) but load is piling up (' + str(w7_effort) +
-                      ' RE / 7 days). Ride Zone 2 today (160â218W) â this is how aerobic base compounds without digging a hole.'
+                      ' RE / 7 days). Ride Zone 2 today (160–218W) — this is how aerobic base compounds without digging a hole.'
                       '</span></div>')
         elif t_rec < 45 and sf < 30:
-            banner = ('<div class="banner banner-amber"><span>â ï¸</span><span>'
+            banner = ('<div class="banner banner-amber"><span>⚠️</span><span>'
                       'Load is light but recovery is low (' + str(round(t_rec)) + '%). '
-                      "Something outside cycling is draining you â don't add load just because Strava looks fresh."
+                      "Something outside cycling is draining you — don't add load just because Strava looks fresh."
                       '</span></div>')
         elif t_hrv and avg_hrv and t_hrv < avg_hrv * 0.88 and t_rec >= 50:
             pct = round((1 - t_hrv / avg_hrv) * 100)
-            banner = ('<div class="banner banner-blue"><span>ð¡</span><span>'
+            banner = ('<div class="banner banner-blue"><span>💡</span><span>'
                       'HRV (' + str(round(t_hrv)) + 'ms) is ' + str(pct) + '% below your ' +
                       str(avg_hrv) + 'ms baseline even though recovery % looks OK. '
-                      'HRV is the earlier warning signal â keep intensity sub-threshold today.'
+                      'HRV is the earlier warning signal — keep intensity sub-threshold today.'
                       '</span></div>')
 
     # Stat display helpers
     def s_rec():
         if has_w:        return (str(round(t_rec)) + "%", "tag-live", "today")
         if avg_rec:      return (str(avg_rec) + "%",       "tag-avg",  "30-day avg")
-        return ("â", "tag-avg", "â")
+        return ("—", "tag-avg", "—")
 
     def s_hrv():
         if t_hrv:        return (str(round(t_hrv)),        "tag-live", "today")
         if avg_hrv:      return (str(avg_hrv),             "tag-avg",  "30-day avg")
-        return ("â", "tag-avg", "â")
+        return ("—", "tag-avg", "—")
 
     def s_rhr():
         if t_rhr:        return (str(int(t_rhr)),          "tag-live", "today")
         if avg_rhr:      return (str(avg_rhr),             "tag-avg",  "30-day avg")
-        return ("â", "tag-avg", "â")
+        return ("—", "tag-avg", "—")
 
     rv, rc, rt = s_rec()
     hv, hc, ht = s_hrv()
     rv2, rc2, rt2 = s_rhr()
-    sv = str(avg_slp) if avg_slp else "â"
+    sv = str(avg_slp) if avg_slp else "—"
 
     # Guidance text
     if readiness is not None and readiness < 50:
         floor = round(avg_hrv * 0.90) if avg_hrv else 84
-        g_rec = ("WHOOP says rest â aim for 8.5â9 hrs tonight. Elevate legs 20 min. "
+        g_rec = ("WHOOP says rest — aim for 8.5–9 hrs tonight. Elevate legs 20 min. "
                  "If HRV is still below " + str(floor) + "ms tomorrow, take another easy day rather than forcing intervals.")
     elif t_hrv and avg_hrv and t_hrv < avg_hrv * 0.90:
         g_rec = ("HRV suppression (" + str(round(t_hrv)) + "ms vs " + str(avg_hrv) + "ms baseline) is a nervous system signal. "
                  "Extra sleep beats extra training now. 8+ hrs, no caffeine after noon.")
     elif sf >= 55:
-        g_rec = ("High load week â cold/warm contrast showers flush metabolites. Aim for 8 hrs. "
+        g_rec = ("High load week — cold/warm contrast showers flush metabolites. Aim for 8 hrs. "
                  "Check tomorrow's WHOOP: if recovery < 65%, hold any high-intensity plan.")
     else:
-        g_rec = ("You're well-recovered. Standard 7.5â8 hrs protects your HRV baseline. "
+        g_rec = ("You're well-recovered. Standard 7.5–8 hrs protects your HRV baseline. "
                  "Light foam rolling (hips, calves, hamstrings) 10 min tonight maintains mobility.")
 
     t_cal = today_d.get("cal") or 0
     if t_cal > 1400:
-        g_nut = ("Post-ride (" + str(t_cal) + " kcal burned): replenish within 30 min â "
-                 "85â100g carbs + 25â30g protein. Keep dinner carb-forward. Tomorrow pre-ride: 60â80g carbs 2 hrs out.")
+        g_nut = ("Post-ride (" + str(t_cal) + " kcal burned): replenish within 30 min — "
+                 "85–100g carbs + 25–30g protein. Keep dinner carb-forward. Tomorrow pre-ride: 60–80g carbs 2 hrs out.")
     elif readiness is not None and readiness < 50:
-        g_nut = ("Rest day: reduce carbs slightly (200â250g total) but keep protein high â 1.7g/kg = 140g for you. "
+        g_nut = ("Rest day: reduce carbs slightly (200–250g total) but keep protein high — 1.7g/kg = 140g for you. "
                  "Leucine-rich foods (eggs, Greek yogurt, chicken) drive muscle repair.")
     elif readiness is not None and readiness >= 72:
-        g_nut = ("Pre-session: 60â80g easy carbs 2 hrs out. At FTP " + str(FTP) + "W, hard zones burn 900â1,000 kcal/hr. "
-                 "During 90+ min rides: 60â90g carbs/hr on the bike.")
+        g_nut = ("Pre-session: 60–80g easy carbs 2 hrs out. At FTP " + str(FTP) + "W, hard zones burn 900–1,000 kcal/hr. "
+                 "During 90+ min rides: 60–90g carbs/hr on the bike.")
     else:
-        g_nut = ("Moderate-load day. Target 5â7g carbs/kg (420â590g). "
-                 "Post-ride recovery window (first 30 min) is most critical â protein + carb combo immediately after.")
+        g_nut = ("Moderate-load day. Target 5–7g carbs/kg (420–590g). "
+                 "Post-ride recovery window (first 30 min) is most critical — protein + carb combo immediately after.")
 
     if readiness is not None and readiness >= 72 and sf < 55:
-        g_nxt = ("Excellent readiness, manageable load â ideal for quality. "
-                 "2Ã20 min sweet spot (246â275W, 85â95% FTP) or 3Ã12 min threshold (275â305W). Full 20-min Z2 warmup first.")
+        g_nxt = ("Excellent readiness, manageable load — ideal for quality. "
+                 "2×20 min sweet spot (246–275W, 85–95% FTP) or 3×12 min threshold (275–305W). Full 20-min Z2 warmup first.")
     elif readiness is not None and readiness >= 72:
-        g_nxt = ("Good recovery but load is high â best next session is 90-min Zone 2 endurance (160â218W). "
+        g_nxt = ("Good recovery but load is high — best next session is 90-min Zone 2 endurance (160–218W). "
                  "Reinforces aerobic adaptation without adding fatigue.")
     else:
-        g_nxt = ("Let the body recover. Next quality session: when WHOOP shows â¥70%, "
-                 "open with a 45-min activation (Z2 + 3Ã2 min fast pedalling) before returning to structured intervals.")
+        g_nxt = ("Let the body recover. Next quality session: when WHOOP shows ≥70%, "
+                 "open with a 45-min activation (Z2 + 3×2 min fast pedalling) before returning to structured intervals.")
 
     # Source pill
     pill_bg    = "#ede9fe" if has_w else "#fff7ed"
     pill_color = "#7c3aed" if has_w else "#c2410c"
-    pill_text  = "ð¢ WHOOP + Strava" if has_w else "ð  Strava + WHOOP (no score today)"
+    pill_text  = "🟢 WHOOP + Strava" if has_w else "🟠 Strava + WHOOP (no score today)"
 
     # Chart data
     chart_json = json.dumps({
@@ -359,11 +359,12 @@ def build_html(whoop, strava):
         "hrv_avg":  rolling7([d["hrv"]      for d in days]),
         "rec_avg":  rolling7([d["recovery"] for d in days]),
         "sleep":    [d["sleep"]    for d in days],
+        "meta":     {"readiness": readiness, "recovery": t_rec, "load": w7_effort},
     })
 
     updated = now.strftime("%B %-d, %Y %H:%M UTC")
 
-    # JavaScript (no f-string needed â embed chart_json directly)
+    # JavaScript (no f-string needed — embed chart_json directly)
     js = """
 const D = """ + chart_json + """;
 const base = {
@@ -410,7 +411,69 @@ new Chart(document.getElementById('recc').getContext('2d'),{type:'line',data:{la
 new Chart(document.getElementById('slpc').getContext('2d'),{type:'line',data:{labels:D.labels,datasets:[
   {label:'Sleep',data:D.sleep,borderColor:'#93c5fd',borderWidth:1.5,backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:0.3,pointRadius:0}
 ]},options:Object.assign({},base)});
-"""
+
+const META = D.meta || {};
+const REC = {
+  card: document.querySelector('.rec'),
+  icon: document.querySelector('.rec-icon'),
+  title: document.querySelector('.rec-title'),
+  body: document.querySelector('.rec-body'),
+  fill: document.querySelector('.readiness-fill'),
+  pct: document.querySelector('.readiness-label span:last-child')
+};
+const BASE = { title: REC.title ? REC.title.textContent : '', body: REC.body ? REC.body.textContent : '' };
+function zone(r){
+  if(r>=72) return {bg:'#f0fdf4',br:'#86efac',icon:'\u{1F6B4}',bar:'#22c55e',
+    title:'Go Time \u2014 Readiness '+r+'%',
+    body:'Quality day: threshold (275\u2013305W) or sweet spot (246\u2013275W). Full Z2 warmup first.'};
+  if(r>=50) return {bg:'#fefce8',br:'#fde047',icon:'\u{1F6B4}',bar:'#f59e0b',
+    title:'Moderate Readiness ('+r+'%) \u2014 Stay Controlled',
+    body:'Zone 2 only (160\u2013218W, HR 121\u2013150). Save intensity for a green day.'};
+  return {bg:'#fef2f2',br:'#fca5a5',icon:'\u{1F634}',bar:'#ef4444',
+    title:'Rest Day \u2014 Readiness '+r+'%',
+    body:'Rest or a very easy spin. Prioritize 8+ hrs sleep tonight.'};
+}
+function applyInputs(){
+  const feel = localStorage.getItem('kd_feel')||'';
+  const note = localStorage.getItem('kd_note')||'';
+  const coach = localStorage.getItem('kd_coach')||'';
+  document.getElementById('inp-feel').value = feel;
+  document.getElementById('inp-note').value = note;
+  document.getElementById('inp-coach').value = coach;
+  if(META.readiness != null && feel !== ''){
+    const r = Math.max(0, Math.min(100, Math.round(META.readiness + Number(feel))));
+    const z = zone(r);
+    REC.card.style.background = z.bg; REC.card.style.borderColor = z.br;
+    REC.icon.textContent = z.icon;
+    REC.title.textContent = z.title;
+    REC.body.textContent = z.body + ' (Base ' + META.readiness + '% from WHOOP+Strava, adjusted for how you feel.)';
+    if(REC.fill){ REC.fill.style.width = r + '%'; REC.fill.style.background = z.bar; }
+    if(REC.pct){ REC.pct.textContent = r + '%'; }
+  } else {
+    if(REC.title) REC.title.textContent = BASE.title;
+    if(REC.body) REC.body.textContent = BASE.body;
+  }
+  document.querySelectorAll('.note-line').forEach(function(e){ e.remove(); });
+  if(coach){
+    const div = document.createElement('div'); div.className = 'note-line';
+    div.textContent = '\u{1F5E3}\uFE0F Coach: ' + coach;
+    REC.body.parentNode.appendChild(div);
+  }
+  if(note){
+    const div = document.createElement('div'); div.className = 'note-line';
+    div.textContent = '\u{1F4DD} You: ' + note;
+    REC.body.parentNode.appendChild(div);
+  }
+}
+document.getElementById('inp-save').addEventListener('click', function(){
+  localStorage.setItem('kd_feel', document.getElementById('inp-feel').value);
+  localStorage.setItem('kd_note', document.getElementById('inp-note').value);
+  localStorage.setItem('kd_coach', document.getElementById('inp-coach').value);
+  applyInputs();
+  const s = document.getElementById('inp-status'); s.textContent = 'Saved \u2014 recommendation updated';
+  setTimeout(function(){ s.textContent = ''; }, 3000);
+});
+applyInputs();"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -454,6 +517,13 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
 .g-icon{{font-size:1.3rem;margin-bottom:6px}}
 .g-label{{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:6px}}
 .g-text{{font-size:.82rem;line-height:1.55;color:#334155}}
+#inputs-card label{{display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px}}
+#inputs-card select,#inputs-card input{{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;margin-bottom:8px;background:#fff;color:#1e293b}}
+.inputs-row{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+#inp-save{{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer}}
+#inp-status{{font-size:.75rem;color:#16a34a;margin-left:8px}}
+.note-line{{margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;color:#334155}}
+@media(max-width:700px){{.inputs-row{{grid-template-columns:1fr}}}}
 @media(max-width:700px){{.stats{{grid-template-columns:repeat(3,1fr)}}.grid2,.grid3{{grid-template-columns:1fr}}}}
 @media(max-width:420px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}
 </style>
@@ -473,6 +543,29 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
     <div class="rec-body">{rc_body}</div>
     {readiness_bar}
   </div>
+</div>
+
+<div class="card" id="inputs-card">
+  <h2>Daily Inputs &nbsp;<span style="font-weight:400">(saved on this device)</span></h2>
+  <div class="inputs-row">
+    <div>
+      <label for="inp-feel">How do you feel today?</label>
+      <select id="inp-feel">
+        <option value="">No input</option>
+        <option value="8">Fresh &#8212; ready to go</option>
+        <option value="0">Normal</option>
+        <option value="-10">Tired &#8212; heavy legs</option>
+        <option value="-25">Wrecked &#8212; run down</option>
+      </select>
+      <label for="inp-note">Your note</label>
+      <input id="inp-note" placeholder="e.g. slept badly, legs sore">
+    </div>
+    <div>
+      <label for="inp-coach">Coach's input</label>
+      <input id="inp-coach" placeholder="e.g. Race Saturday &#8212; keep this week easy">
+    </div>
+  </div>
+  <button id="inp-save">Save &amp; update recommendation</button><span id="inp-status"></span>
 </div>
 
 {banner}
@@ -546,7 +639,7 @@ def main():
     print(f"\nBuilding HTML ({DAYS_BACK} days)...")
     html = build_html(whoop, strava)
     OUTPUT.write_text(html, encoding="utf-8")
-    print(f"â Wrote {OUTPUT} ({len(html):,} bytes)")
+    print(f"✓ Wrote {OUTPUT} ({len(html):,} bytes)")
 
 
 if __name__ == "__main__":
