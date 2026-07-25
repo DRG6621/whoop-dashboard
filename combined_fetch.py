@@ -423,13 +423,13 @@ const REC = {
 };
 const BASE = { title: REC.title ? REC.title.textContent : '', body: REC.body ? REC.body.textContent : '' };
 function zone(r){
-  if(r>=72) return {bg:'#f0fdf4',br:'#86efac',icon:'\u{1F6B4}',bar:'#22c55e',
+  if(r>=72) return {bg:'#f0fdf4',br:'#86efac',icon:'🚴',bar:'#22c55e',
     title:'Go Time \u2014 Readiness '+r+'%',
     body:'Quality day: threshold (275\u2013305W) or sweet spot (246\u2013275W). Full Z2 warmup first.'};
-  if(r>=50) return {bg:'#fefce8',br:'#fde047',icon:'\u{1F6B4}',bar:'#f59e0b',
+  if(r>=50) return {bg:'#fefce8',br:'#fde047',icon:'🚴',bar:'#f59e0b',
     title:'Moderate Readiness ('+r+'%) \u2014 Stay Controlled',
     body:'Zone 2 only (160\u2013218W, HR 121\u2013150). Save intensity for a green day.'};
-  return {bg:'#fef2f2',br:'#fca5a5',icon:'\u{1F634}',bar:'#ef4444',
+  return {bg:'#fef2f2',br:'#fca5a5',icon:'😴',bar:'#ef4444',
     title:'Rest Day \u2014 Readiness '+r+'%',
     body:'Rest or a very easy spin. Prioritize 8+ hrs sleep tonight.'};
 }
@@ -456,12 +456,12 @@ function applyInputs(){
   document.querySelectorAll('.note-line').forEach(function(e){ e.remove(); });
   if(coach){
     const div = document.createElement('div'); div.className = 'note-line';
-    div.textContent = '\u{1F5E3}\uFE0F Coach: ' + coach;
+    div.textContent = '🗣️ Coach: ' + coach;
     REC.body.parentNode.appendChild(div);
   }
   if(note){
     const div = document.createElement('div'); div.className = 'note-line';
-    div.textContent = '\u{1F4DD} You: ' + note;
+    div.textContent = '📝 You: ' + note;
     REC.body.parentNode.appendChild(div);
   }
 }
