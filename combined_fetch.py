@@ -148,6 +148,46 @@ def fetch_strava(token):
     return by_day
 
 
+def fetch_trainingpeaks():
+    """Fetch planned workouts from TrainingPeaks iCal feed (premium calendar sync URL)."""
+    url = os.environ.get("TP_ICAL_URL", "")
+    if not url:
+        return []
+    try:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"  TrainingPeaks feed error: {e}")
+        return []
+    raw = r.text.replace("\r\n", "\n")
+    lines = []
+    for ln in raw.split("\n"):
+        if ln.startswith(" ") and lines:
+            lines[-1] += ln[1:]
+        else:
+            lines.append(ln)
+    events, cur = [], None
+    for ln in lines:
+        if ln.startswith("BEGIN:VEVENT"):
+            cur = {}
+        elif ln.startswith("END:VEVENT"):
+            if cur is not None:
+                events.append(cur)
+            cur = None
+        elif cur is not None:
+            if ln.startswith("DTSTART"):
+                cur["date"] = ln.split(":", 1)[-1].strip()[:8]
+            elif ln.startswith("SUMMARY"):
+                cur["summary"] = ln.split(":", 1)[-1].strip()
+            elif ln.startswith("DESCRIPTION"):
+                d = ln.split(":", 1)[-1].strip()
+                cur["desc"] = d.replace("\\n", " ").replace("\\,", ",")[:160]
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    out = [e for e in sorted(events, key=lambda x: x.get("date", ""))
+           if e.get("date", "") >= today and e.get("summary")]
+    print(f"  TrainingPeaks: {len(out)} upcoming planned workouts")
+    return out[:10]
+
 # ── STAT HELPERS ──────────────────────────────────────────────────────────────
 
 def rolling7(vals):
@@ -164,7 +204,7 @@ def safe_avg(lst, p=1):
 
 # ── HTML BUILDER ──────────────────────────────────────────────────────────────
 
-def build_html(whoop, strava):
+def build_html(whoop, strava, tp=None):
     now = datetime.now(timezone.utc)
 
     # Build day-by-day list
@@ -350,6 +390,26 @@ def build_html(whoop, strava):
     pill_color = "#7c3aed" if has_w else "#c2410c"
     pill_text  = "🟢 WHOOP + Strava" if has_w else "🟠 Strava + WHOOP (no score today)"
 
+    # TrainingPeaks planned workouts section
+    def esc(s):
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    tp_items = ""
+    for e in (tp or []):
+        try:
+            dtp = datetime.strptime(e["date"], "%Y%m%d")
+            lbl = dtp.strftime("%a %b ") + str(dtp.day)
+        except Exception:
+            lbl = e.get("date", "")
+        dsc = esc(e.get("desc", ""))
+        tp_items += ('<div class="tp-item"><span class="tp-date">' + lbl + '</span>'
+                     '<span class="tp-name">' + esc(e.get("summary", "")) + '</span>'
+                     + ('<span class="tp-desc">' + dsc + '</span>' if dsc else '') + '</div>')
+    if tp_items:
+        tp_section = ('<div class="card"><h2>Up Next from TrainingPeaks <span style="font-weight:400">(planned workouts)</span></h2>'
+                      '<div class="tp-list">' + tp_items + '</div></div>')
+    else:
+        tp_section = ""
+
     # Chart data
     chart_json = json.dumps({
         "labels":   [d["label"]    for d in days],
@@ -523,6 +583,11 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
 #inp-save{{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer}}
 #inp-status{{font-size:.75rem;color:#16a34a;margin-left:8px}}
 .note-line{{margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;color:#334155}}
+.tp-item{{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}}
+.tp-item:last-child{{border-bottom:none}}
+.tp-date{{font-size:.72rem;font-weight:700;color:#7c3aed;min-width:70px}}
+.tp-name{{font-size:.85rem;font-weight:600}}
+.tp-desc{{font-size:.75rem;color:#64748b;width:100%;padding-left:80px}}
 @media(max-width:700px){{.inputs-row{{grid-template-columns:1fr}}}}
 @media(max-width:700px){{.stats{{grid-template-columns:repeat(3,1fr)}}.grid2,.grid3{{grid-template-columns:1fr}}}}
 @media(max-width:420px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}
@@ -567,6 +632,8 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
   </div>
   <button id="inp-save">Save &amp; update recommendation</button><span id="inp-status"></span>
 </div>
+
+{tp_section}
 
 {banner}
 
@@ -636,8 +703,9 @@ def main():
     print()
     whoop  = fetch_whoop(wt)
     strava = fetch_strava(st)
+    tp     = fetch_trainingpeaks()
     print(f"\nBuilding HTML ({DAYS_BACK} days)...")
-    html = build_html(whoop, strava)
+    html = build_html(whoop, strava, tp)
     OUTPUT.write_text(html, encoding="utf-8")
     print(f"✓ Wrote {OUTPUT} ({len(html):,} bytes)")
 
