@@ -445,6 +445,31 @@ def build_html(whoop, strava, tp=None):
     else:
         tp_section = ""
 
+    # Macro / fueling context from next planned TrainingPeaks workout
+    def classify_wo(text):
+        t = (text or "").lower()
+        if not t or "rest" in t or "day off" in t: return ("Rest day", 3)
+        if any(w in t for w in ["race", "a:", "classic", " gc "]): return ("Race", 9)
+        if any(w in t for w in ["threshold","sub lt"," lt ","interval","vo2","tempo","sweet spot","big gear","hard"]): return ("Hard / intensity", 8)
+        if any(w in t for w in ["long","endurance","zone 2","z2","century","3 hour","4 hour","base"]): return ("Long / endurance", 7)
+        if any(w in t for w in ["skills","recovery","easy","spin","mobility","technique"]): return ("Easy / skills", 4)
+        return ("Moderate", 6)
+    today_ymd = now.strftime("%Y%m%d")
+    tomo_ymd  = (now + timedelta(days=1)).strftime("%Y%m%d")
+    next_wo = None
+    for e in (tp or []):
+        if e.get("date") in (today_ymd, tomo_ymd) and e.get("summary"):
+            next_wo = e; break
+    if next_wo is None and tp:
+        next_wo = tp[0]
+    if next_wo:
+        wo_name = next_wo.get("summary", "")
+        wo_when = "Today" if next_wo.get("date") == today_ymd else ("Tomorrow" if next_wo.get("date") == tomo_ymd else next_wo.get("date"))
+        tier_name, carb_gkg = classify_wo(wo_name)
+    else:
+        wo_name = "No planned workout"; wo_when = ""; tier_name = "Rest day"; carb_gkg = 3
+    macro_ctx = {"workout": wo_name, "when": wo_when, "tier": tier_name, "carb": carb_gkg}
+
     # Chart data
     chart_json = json.dumps({
         "labels":   [d["label"]    for d in days],
@@ -458,6 +483,7 @@ def build_html(whoop, strava, tp=None):
         "ctl":      ctl_series,
         "atl":      atl_series,
         "tsb":      tsb_series,
+        "macro":    macro_ctx,
         "meta":     {"readiness": readiness, "recovery": t_rec, "load": w7_effort},
     })
 
@@ -578,7 +604,47 @@ document.getElementById('inp-save').addEventListener('click', function(){
   const s = document.getElementById('inp-status'); s.textContent = 'Saved \u2014 recommendation updated';
   setTimeout(function(){ s.textContent = ''; }, 3000);
 });
-applyInputs();"""
+applyInputs();
+
+const MAC = D.macro || {};
+function renderMacro(){
+  const lb = Number(localStorage.getItem('kd_weight')||0);
+  const el = document.getElementById('macro-body');
+  if(!el) return;
+  if(!lb){ el.innerHTML = 'Enter your weight in Daily Inputs to see today\u2019s fuel plan.'; return; }
+  const kg = lb/2.205;
+  const carbG = MAC.carb || 5;
+  const carbs = Math.round(kg*carbG);
+  const protein = Math.round(kg*1.8);
+  const fat = Math.round(kg*1.0);
+  const cals = carbs*4 + protein*4 + fat*9;
+  const when = MAC.when ? (MAC.when + ': ') : '';
+  const tips = {
+    'Hard / intensity':'Top off carbs before and take 60\u201390g carbs/hr on the bike. Protein within 30 min after.',
+    'Race':'Race fuel: 80\u2013100g carbs/hr, pre-load carbs the night before and 2\u20133 hrs out.',
+    'Long / endurance':'Steady carbs 60\u201380g/hr on long rides. Refuel within the first hour after.',
+    'Easy / skills':'Lighter day \u2014 carbs mostly around the ride. Keep protein steady for recovery.',
+    'Moderate':'Moderate carbs around the session. Protein spread across the day.',
+    'Rest day':'Lower carbs, keep protein high to support recovery and adaptation.'
+  };
+  el.innerHTML =
+    '<div class="mhead"><b>' + when + (MAC.workout||'') + '</b> &middot; ' + (MAC.tier||'') + '</div>' +
+    '<div class="mg">' +
+      '<div class="mb"><span>Calories</span><b>' + cals.toLocaleString() + '</b></div>' +
+      '<div class="mb"><span>Carbs</span><b>' + carbs + 'g</b></div>' +
+      '<div class="mb"><span>Protein</span><b>' + protein + 'g</b></div>' +
+      '<div class="mb"><span>Fat</span><b>' + fat + 'g</b></div>' +
+    '</div>' +
+    '<div class="mhead" style="margin-top:10px">' + (tips[MAC.tier]||'') + '</div>';
+}
+const wEl = document.getElementById('inp-weight');
+if(wEl){ wEl.value = localStorage.getItem('kd_weight')||''; }
+document.getElementById('inp-save').addEventListener('click', function(){
+  if(wEl) localStorage.setItem('kd_weight', wEl.value);
+  renderMacro();
+});
+renderMacro();
+"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -628,6 +694,15 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
 #inp-save{{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer}}
 #inp-status{{font-size:.75rem;color:#16a34a;margin-left:8px}}
 .note-line{{margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;color:#334155}}
+.toolbar{{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}}
+.toolbar button,.tb-btn{{font-size:.78rem;font-weight:600;padding:7px 13px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#1e293b;cursor:pointer;text-decoration:none;display:inline-block}}
+.tb-btn{{background:#1e293b;color:#fff;border-color:#1e293b}}
+#macro-card .mg{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px}}
+#macro-card .mb{{background:#f8fafc;border-radius:8px;padding:10px 12px;text-align:center}}
+#macro-card .mb b{{display:block;font-size:1.25rem;margin-top:2px}}
+#macro-card .mb span{{font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8}}
+#macro-card .mhead{{font-size:.85rem;margin-bottom:10px;color:#334155}}
+@media(max-width:600px){{#macro-card .mg{{grid-template-columns:repeat(2,1fr)}}}}
 .pmc-strip{{display:flex;gap:18px;font-size:.8rem;margin-bottom:12px;flex-wrap:wrap}}
 .tp-item{{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}}
 .tp-item:last-child{{border-bottom:none}}
@@ -645,6 +720,11 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
 <div class="sub">
   <span>Updated {updated} &nbsp;&middot;&nbsp; {DAYS_BACK} days</span>
   <span class="pill">{pill_text}</span>
+</div>
+
+<div class="toolbar">
+  <button type="button" onclick="location.reload(true)">&#8635; Reload latest</button>
+  <a class="tb-btn" href="https://github.com/DRG6621/whoop-dashboard/actions/workflows/update.yml" target="_blank" rel="noopener">&#10227; Rebuild data now</a>
 </div>
 
 <div class="rec">
@@ -674,12 +754,19 @@ h1{{font-size:1.5rem;font-weight:700;margin-bottom:4px}}
     <div>
       <label for="inp-coach">Coach's input</label>
       <input id="inp-coach" placeholder="e.g. Race Saturday &#8212; keep this week easy">
+      <label for="inp-weight">Your weight (lb)</label>
+      <input id="inp-weight" type="number" placeholder="e.g. 165">
     </div>
   </div>
   <button id="inp-save">Save &amp; update recommendation</button><span id="inp-status"></span>
 </div>
 
 {tp_section}
+
+<div class="card" id="macro-card">
+  <h2>Fuel Plan &nbsp;<span style="font-weight:400">(macros for the next session)</span></h2>
+  <div id="macro-body">Enter your weight in Daily Inputs to see today's fuel plan.</div>
+</div>
 
 {banner}
 
