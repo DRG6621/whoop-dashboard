@@ -86,6 +86,20 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
   </div>
 </div>
 
+<div class="card" id="ai-card">
+  <h2>&#129302; AI Coach <span style="font-weight:400">(powered by Claude &middot; grounded in your data)</span></h2>
+  <div id="ai-daily" class="g-text" style="min-height:20px;line-height:1.55">Loading today&#8217;s coaching&#8230;</div>
+  <div style="margin-top:8px"><button class="tb-btn" id="ai-regen" style="display:none;font-size:.72rem;padding:5px 11px">&#10227; Regenerate</button> <span id="ai-cached" style="font-size:.7rem;color:#94a3b8"></span></div>
+  <div id="ai-chat" style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:14px">
+    <div id="ai-msgs" style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <input id="ai-input" placeholder="Ask your coach&#8230; e.g. Should I do intervals tomorrow?" style="flex:1;padding:9px 11px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;color:#1e293b;background:#fff">
+      <button class="tb-btn" id="ai-send">Send</button>
+    </div>
+    <div style="font-size:.68rem;color:#cbd5e1;margin-top:6px">General training guidance, not medical advice.</div>
+  </div>
+</div>
+
 <div class="card" id="inputs-card">
   <h2>Daily Inputs <span style="font-weight:400">(saved on this device)</span></h2>
   <div class="inputs-row">
@@ -124,6 +138,7 @@ const D = RAW.days, TP = RAW.tp || [];
 let FTP = Number(localStorage.getItem('kd_ftp')||300);
 let RANGE = Number(localStorage.getItem('kd_range')||30);
 let charts = {};
+let CTX = {};
 
 document.getElementById('sub-updated').textContent = 'Updated ' + RAW.generated + '  ·  live' + (CACHED==='cached'?' (cached <15 min)':'');
 document.getElementById('btn-refresh').onclick = function(){ location.href='?fresh=1'; };
@@ -266,6 +281,28 @@ function render(){
   const g=(i,l,t)=>'<div class="g-card"><div class="g-icon">'+i+'</div><div class="g-label">'+l+'</div><div class="g-text">'+t+'</div></div>';
   document.getElementById('guidance').innerHTML=g('😴','Recovery',gRec)+g('🥗','Nutrition',gNut)+g('🎯','Next Session',gNxt);
 
+  // context for the AI coach (exactly what the dashboard shows)
+  CTX = {
+    date: last.date,
+    recovery: rw?Math.round(rw.recovery):null,
+    hrv: rw&&rw.hrv!=null?Math.round(rw.hrv):null,
+    hrvBaseline: avgHrv,
+    rhr: rw&&rw.rhr!=null?Math.round(rw.rhr):null,
+    sleepH: last.sleep,
+    avgSleep: avgSlp,
+    readiness: readiness,
+    baseReadiness: baseReadiness,
+    sevenDayLoad: w7effort,
+    sevenDayHours: w7hrs,
+    ctl: pn.ctl, atl: pn.atl, tsb: pn.tsb, rampPerWeek: ramp,
+    ftp: FTP,
+    weightLb: lb||null,
+    coachNote: coach||'',
+    yourNote: note||'',
+    nextWorkout: nw?nw.summary:(TP[0]?TP[0].summary:null),
+    upcoming: TP.slice(0,5).map(e=>({date:e.date,summary:e.summary}))
+  };
+
   drawCharts(pmc);
 }
 
@@ -303,8 +340,50 @@ document.getElementById('range-seg').addEventListener('click',function(e){ if(e.
 document.getElementById('inp-save').addEventListener('click',function(){
   ['feel','note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
   render(); const s=document.getElementById('inp-status'); s.textContent='Saved'; setTimeout(()=>s.textContent='',2500);
+  loadDaily(true);  // inputs changed → refresh coaching
 });
+
+// ---- AI Coach ----
+const aiDaily=document.getElementById('ai-daily'), aiMsgs=document.getElementById('ai-msgs'),
+      aiInput=document.getElementById('ai-input'), aiSend=document.getElementById('ai-send'),
+      aiRegen=document.getElementById('ai-regen'), aiCached=document.getElementById('ai-cached');
+let chatHist=[];
+function mdLite(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>'); }
+async function coachCall(payload){
+  const r=await fetch('/coach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return r.json();
+}
+async function loadDaily(force){
+  aiCached.textContent='';
+  aiDaily.innerHTML='<span style="color:#94a3b8">Thinking about today&#8230;</span>';
+  try{
+    const j=await coachCall({type:'daily',force:!!force,context:CTX});
+    if(j.error){ aiDaily.innerHTML='<span style="color:#b45309">'+mdLite(j.error)+'</span>'; }
+    else { aiDaily.innerHTML=mdLite(j.text); aiRegen.style.display='inline-block'; if(j.cached) aiCached.textContent='cached'; }
+  }catch(e){ aiDaily.innerHTML='<span style="color:#b45309">Coach unavailable right now.</span>'; }
+}
+function addMsg(role,text){
+  const b=document.createElement('div');
+  b.style.cssText='max-width:85%;padding:9px 12px;border-radius:12px;font-size:.85rem;line-height:1.5;'+(role==='user'?'align-self:flex-end;background:#1e293b;color:#fff':'align-self:flex-start;background:#f1f5f9;color:#1e293b');
+  b.innerHTML=mdLite(text); aiMsgs.appendChild(b); aiMsgs.scrollTop=aiMsgs.scrollHeight;
+}
+async function sendChat(){
+  const msg=aiInput.value.trim(); if(!msg) return;
+  aiInput.value=''; addMsg('user',msg);
+  const typing=document.createElement('div'); typing.style.cssText='align-self:flex-start;color:#94a3b8;font-size:.8rem'; typing.textContent='Coach is typing&#8230;'; aiMsgs.appendChild(typing); aiMsgs.scrollTop=aiMsgs.scrollHeight;
+  try{
+    const j=await coachCall({type:'chat',message:msg,history:chatHist.slice(-8),context:CTX});
+    typing.remove();
+    if(j.error){ addMsg('assistant','⚠️ '+j.error); }
+    else { addMsg('assistant',j.text); chatHist.push({role:'user',content:msg}); chatHist.push({role:'assistant',content:j.text}); }
+  }catch(e){ typing.remove(); addMsg('assistant','⚠️ Coach unavailable right now.'); }
+}
+aiSend.onclick=sendChat;
+aiInput.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } });
+aiRegen.onclick=()=>loadDaily(true);
+
 render();
+setTimeout(()=>loadDaily(false),300);
 </script>
 </body>
 </html>

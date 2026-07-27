@@ -4,7 +4,7 @@ Live-fetches WHOOP + Strava + TrainingPeaks on each load (15-min cache),
 owns the rotating WHOOP refresh token in Upstash KV, and returns an
 interactive HTML dashboard. Password protection is handled by Vercel Pro.
 """
-import json, os, time, urllib.parse
+import json, os, time, urllib.parse, hashlib
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -248,7 +248,138 @@ def render(data, cached):
     payload = json.dumps(data)
     return page.replace("__PAYLOAD__", payload).replace("__CACHED__", "cached" if cached else "fresh")
 
+# ---- AI coach (Anthropic Messages API via requests; no SDK needed) ----
+AI_ENDPOINT = "https://api.anthropic.com/v1/messages"
+
+DAILY_SYSTEM = (
+    "You are Keith's experienced, supportive cycling coach. Using the athlete data provided, "
+    "write today's coaching in 3-5 tight sentences: (1) the headline call for today "
+    "(train hard / ride steady / recover) grounded in the readiness and form (TSB) numbers; "
+    "(2) the specific session, tied to his FTP watts/zones and any planned workout; "
+    "(3) one fueling or recovery cue. Be concrete and encouraging. Respect the readiness signal: "
+    "if readiness is low or he notes illness or heavy fatigue, protect recovery and do NOT prescribe "
+    "hard intervals. Never give medical advice; for pain or illness advise easy days and a professional. "
+    "Keep it under ~120 words, plain text, no preamble or sign-off."
+)
+CHAT_SYSTEM = (
+    "You are Keith's knowledgeable, supportive cycling coach. Answer his questions about training, "
+    "recovery, pacing, and fueling using the current athlete data provided. Be concise, specific, and "
+    "practical - reference his actual numbers (readiness, form/TSB, FTP watts, planned workouts) when "
+    "relevant. Respect the readiness signal and never prescribe hard efforts on a low-recovery day. "
+    "You are not a doctor or dietitian: for pain, illness, or medical questions, recommend rest and a "
+    "professional. Keep answers short (a few sentences) unless he asks for more detail."
+)
+
+def _ctx_text(ctx):
+    if not isinstance(ctx, dict):
+        return ""
+    L = [
+        "Date: %s" % ctx.get("date"),
+        "WHOOP recovery: %s%% | HRV: %s (baseline ~%s) | RHR: %s | last sleep: %sh (avg %sh)" % (
+            ctx.get("recovery"), ctx.get("hrv"), ctx.get("hrvBaseline"), ctx.get("rhr"),
+            ctx.get("sleepH"), ctx.get("avgSleep")),
+        "Combined readiness: %s/100 (base %s from WHOOP+Strava)" % (ctx.get("readiness"), ctx.get("baseReadiness")),
+        "7-day load: %s relative-effort over %sh riding" % (ctx.get("sevenDayLoad"), ctx.get("sevenDayHours")),
+        "PMC - Fitness(CTL) %s, Fatigue(ATL) %s, Form(TSB) %s, ramp %s CTL/wk" % (
+            ctx.get("ctl"), ctx.get("atl"), ctx.get("tsb"), ctx.get("rampPerWeek")),
+        "FTP %sW, body weight %s lb" % (ctx.get("ftp"), ctx.get("weightLb")),
+    ]
+    if ctx.get("coachNote"):
+        L.append("Coach's note: %s" % ctx.get("coachNote"))
+    if ctx.get("yourNote"):
+        L.append("Athlete's note today: %s" % ctx.get("yourNote"))
+    L.append("Next planned workout: %s" % (ctx.get("nextWorkout") or "none scheduled"))
+    up = ctx.get("upcoming") or []
+    if isinstance(up, list) and up:
+        L.append("Upcoming: " + "; ".join(
+            ("%s %s" % (u.get("date", ""), u.get("summary", ""))).strip() for u in up[:5] if isinstance(u, dict)))
+    return "\n".join(str(x) for x in L)
+
+def anthropic_call(system, messages, max_tokens=700):
+    key = _env("ANTHROPIC_API_KEY")
+    if not key:
+        return None, ("AI coaching isn't set up yet. Add an ANTHROPIC_API_KEY in this project's "
+                      "Vercel Environment Variables, redeploy, then reload.")
+    model = _env("AI_MODEL") or "claude-3-5-sonnet-latest"
+    try:
+        r = requests.post(AI_ENDPOINT, headers={
+            "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json",
+        }, data=json.dumps({
+            "model": model, "max_tokens": max_tokens, "system": system, "messages": messages,
+        }), timeout=45)
+    except Exception as e:
+        return None, "Coach request failed: " + str(e)[:120]
+    if r.status_code != 200:
+        try:
+            em = r.json().get("error", {}).get("message", "")
+        except Exception:
+            em = r.text[:160]
+        return None, "Coach error (%s): %s" % (r.status_code, em[:170])
+    try:
+        parts = r.json().get("content", [])
+        txt = "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
+        return (txt or "(no reply)"), None
+    except Exception:
+        return None, "Coach parse error"
+
+def handle_coach(environ):
+    try:
+        n = int(environ.get("CONTENT_LENGTH") or 0)
+    except Exception:
+        n = 0
+    raw = environ["wsgi.input"].read(n) if n > 0 else b""
+    try:
+        req = json.loads((raw or b"{}").decode("utf-8"))
+    except Exception:
+        req = {}
+    ctxt = _ctx_text(req.get("context", {}))
+    if req.get("type") == "daily":
+        h = hashlib.sha256(ctxt.encode("utf-8")).hexdigest()[:16]
+        ck = "coach_daily:" + h
+        if not req.get("force"):
+            c = kv_get(ck)
+            if c:
+                return {"text": c, "cached": True}
+        text, err = anthropic_call(DAILY_SYSTEM, [
+            {"role": "user", "content": ctxt + "\n\nGive me today's coaching now."}], 700)
+        if err:
+            return {"error": err}
+        try:
+            kv_set(ck, text)
+        except Exception:
+            pass
+        return {"text": text}
+    # chat
+    msg = (req.get("message") or "").strip()[:1200]
+    if not msg:
+        return {"error": "Say something to your coach."}
+    messages = []
+    for m in (req.get("history") or [])[-8:]:
+        role = m.get("role") if isinstance(m, dict) else None
+        content = (m.get("content") or "")[:2000] if isinstance(m, dict) else ""
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": msg})
+    text, err = anthropic_call(CHAT_SYSTEM + "\n\nCurrent athlete data:\n" + ctxt, messages, 700)
+    if err:
+        return {"error": err}
+    return {"text": text}
+
 def app(environ, start_response):
+    method = environ.get("REQUEST_METHOD", "GET").upper()
+    path = environ.get("PATH_INFO", "") or ""
+    if method == "POST" and path.rstrip("/").endswith("coach"):
+        try:
+            out = handle_coach(environ)
+        except Exception as e:
+            out = {"error": "Coach failed: " + str(e)[:140]}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
     qs = environ.get("QUERY_STRING", "") or ""
     params = urllib.parse.parse_qs(qs)
     seed = params.get("seed", [""])[0]
