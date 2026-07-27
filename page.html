@@ -114,6 +114,12 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
       <label for="inp-weight">Your weight (lb)</label><input id="inp-weight" type="number" placeholder="e.g. 165">
     </div>
   </div>
+  <div style="margin-top:4px;padding-top:12px;border-top:1px solid #f1f5f9">
+    <label style="display:flex;align-items:center;gap:8px;font-weight:600;color:#334155;cursor:pointer;margin-bottom:0">
+      <input type="checkbox" id="inp-offplan" style="width:auto;margin:0;flex:none"> &#128681; Going off-plan today (not the scheduled workout)
+    </label>
+    <input id="inp-offplannote" placeholder="What are you doing instead? e.g. spontaneous group ride, skipping the intervals" style="margin-top:8px">
+  </div>
   <button id="inp-save">Save</button><span id="inp-status"></span>
 </div>
 
@@ -221,6 +227,8 @@ function render(){
   const coach=localStorage.getItem('kd_coach')||'', note=localStorage.getItem('kd_note')||'';
   if(coach){ const e=document.createElement('div'); e.className='note-line'; e.textContent='🗣️ Coach: '+coach; notes.appendChild(e); }
   if(note){ const e=document.createElement('div'); e.className='note-line'; e.textContent='📝 You: '+note; notes.appendChild(e); }
+  const offP=localStorage.getItem('kd_offplan')==='1', offPn=localStorage.getItem('kd_offplannote')||'';
+  if(offP){ const e=document.createElement('div'); e.className='note-line'; e.style.background='#fff7ed'; e.style.color='#9a3412'; e.textContent='🚩 Off-plan today'+(offPn?': '+offPn:''); notes.appendChild(e); }
 
   // stats
   function lastScored(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
@@ -299,6 +307,8 @@ function render(){
     weightLb: lb||null,
     coachNote: coach||'',
     yourNote: note||'',
+    offPlan: localStorage.getItem('kd_offplan')==='1',
+    offPlanNote: localStorage.getItem('kd_offplannote')||'',
     nextWorkout: nw?nw.summary:(TP[0]?TP[0].summary:null),
     upcoming: TP.slice(0,5).map(e=>({date:e.date,summary:e.summary}))
   };
@@ -337,8 +347,12 @@ function drawCharts(pmc){
 document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); });
 document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); }});
 ['inp-feel','inp-note','inp-coach','inp-weight'].forEach(id=>{ const el=document.getElementById(id); const k='kd_'+id.split('-')[1]; el.value=localStorage.getItem(k)||''; });
+document.getElementById('inp-offplan').checked = localStorage.getItem('kd_offplan')==='1';
+document.getElementById('inp-offplannote').value = localStorage.getItem('kd_offplannote')||'';
 document.getElementById('inp-save').addEventListener('click',function(){
   ['feel','note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
+  localStorage.setItem('kd_offplan', document.getElementById('inp-offplan').checked?'1':'0');
+  localStorage.setItem('kd_offplannote', document.getElementById('inp-offplannote').value);
   render(); const s=document.getElementById('inp-status'); s.textContent='Saved'; setTimeout(()=>s.textContent='',2500);
   loadDaily(true);  // inputs changed → refresh coaching
 });

@@ -259,6 +259,9 @@ DAILY_SYSTEM = (
     "(3) one fueling or recovery cue. Be concrete and encouraging. Respect the readiness signal: "
     "if readiness is low or he notes illness or heavy fatigue, protect recovery and do NOT prescribe "
     "hard intervals. Never give medical advice; for pain or illness advise easy days and a professional. "
+    "If an OFF-PLAN FLAG is present, acknowledge he's going off-script and coach the deviation: keep it "
+    "aligned with today's readiness (don't let an off-plan ride turn a needed recovery day into a hard one); "
+    "if he's set on it, give a specific intensity/duration cap and note the trade-off for the plan. "
     "Keep it under ~120 words, plain text, no preamble or sign-off."
 )
 CHAT_SYSTEM = (
@@ -267,7 +270,9 @@ CHAT_SYSTEM = (
     "practical - reference his actual numbers (readiness, form/TSB, FTP watts, planned workouts) when "
     "relevant. Respect the readiness signal and never prescribe hard efforts on a low-recovery day. "
     "You are not a doctor or dietitian: for pain, illness, or medical questions, recommend rest and a "
-    "professional. Keep answers short (a few sentences) unless he asks for more detail."
+    "professional. If an OFF-PLAN FLAG is present, coach the deviation honestly - help him make the off-plan "
+    "choice fit his readiness and flag the cost to his plan if it's a bad idea. "
+    "Keep answers short (a few sentences) unless he asks for more detail."
 )
 
 def _ctx_text(ctx):
@@ -288,6 +293,10 @@ def _ctx_text(ctx):
         L.append("Coach's note: %s" % ctx.get("coachNote"))
     if ctx.get("yourNote"):
         L.append("Athlete's note today: %s" % ctx.get("yourNote"))
+    if ctx.get("offPlan"):
+        note = ctx.get("offPlanNote") or ""
+        L.append("*** OFF-PLAN FLAG: the athlete is deviating from the scheduled workout today.%s ***" % (
+            (" What they're doing instead: %s." % note) if note else ""))
     L.append("Next planned workout: %s" % (ctx.get("nextWorkout") or "none scheduled"))
     up = ctx.get("upcoming") or []
     if isinstance(up, list) and up:
