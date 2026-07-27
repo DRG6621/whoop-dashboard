@@ -208,11 +208,14 @@ function render(){
   if(note){ const e=document.createElement('div'); e.className='note-line'; e.textContent='📝 You: '+note; notes.appendChild(e); }
 
   // stats
+  function lastScored(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
+  const rw = lastScored('recovery');
+  const recSub = rw ? (rw.date===last.date ? 'WHOOP %' : 'WHOOP \u00b7 '+rw.label) : 'WHOOP %';
   const stat=(l,v,s,c)=>'<div class="stat"><div class="stat-label">'+l+'</div><div class="stat-val" style="color:'+c+'">'+v+'</div><div class="stat-sub">'+s+'</div></div>';
   document.getElementById('stats').innerHTML =
-    stat('Recovery', hasW?tRec+'%':'—','WHOOP %','#22c55e')+
-    stat('HRV', tHrv!=null?Math.round(tHrv):'—','ms','#6366f1')+
-    stat('RHR', tRhr!=null?Math.round(tRhr):'—','bpm','#ef4444')+
+    stat('Recovery', rw?Math.round(rw.recovery)+'%':'—',recSub,'#22c55e')+
+    stat('HRV', rw&&rw.hrv!=null?Math.round(rw.hrv):'—','ms','#6366f1')+
+    stat('RHR', rw&&rw.rhr!=null?Math.round(rw.rhr):'—','bpm','#ef4444')+
     stat('7-Day Load', w7effort,'rel effort','#f59e0b')+
     stat('7-Day Hours', w7hrs,'hrs riding','#3b82f6')+
     stat('Avg Sleep', avgSlp!=null?avgSlp:'—','hrs · '+D.length+'d','#8b5cf6');
