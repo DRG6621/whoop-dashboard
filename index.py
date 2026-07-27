@@ -300,7 +300,7 @@ def anthropic_call(system, messages, max_tokens=700):
     if not key:
         return None, ("AI coaching isn't set up yet. Add an ANTHROPIC_API_KEY in this project's "
                       "Vercel Environment Variables, redeploy, then reload.")
-    model = _env("AI_MODEL") or "claude-3-5-sonnet-latest"
+    model = _env("AI_MODEL") or "claude-sonnet-5"
     try:
         r = requests.post(AI_ENDPOINT, headers={
             "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json",
