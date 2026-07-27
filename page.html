@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keith's Training + Recovery Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#1e293b;padding:24px;max-width:980px;margin:0 auto}
+h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
+.sub{color:#64748b;font-size:.85rem;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.pill{font-size:.72rem;padding:3px 9px;border-radius:20px;font-weight:600;background:#ede9fe;color:#7c3aed}
+.toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.toolbar button,.tb-btn{font-size:.78rem;font-weight:600;padding:7px 13px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#1e293b;cursor:pointer}
+.tb-btn{background:#1e293b;color:#fff;border-color:#1e293b}
+.seg{display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}
+.seg button{border:none;border-radius:0;background:#fff;padding:7px 12px}
+.seg button.on{background:#1e293b;color:#fff}
+.ftpwrap{display:flex;align-items:center;gap:8px;font-size:.78rem;color:#475569}
+.ftpwrap input{width:130px}
+.rec{border-radius:12px;padding:20px 24px;margin-bottom:14px;display:flex;gap:16px;align-items:flex-start;background:#fefce8;border:2px solid #fde047}
+.rec-icon{font-size:2.2rem;line-height:1;flex-shrink:0}
+.rec-title{font-size:1.1rem;font-weight:700}
+.rec-body{font-size:.85rem;color:#475569;margin-top:5px;line-height:1.5}
+.readiness-wrap{margin-top:10px}
+.readiness-label{font-size:.72rem;color:#64748b;display:flex;justify-content:space-between;margin-bottom:4px}
+.readiness-bar{height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden}
+.readiness-fill{height:100%;border-radius:4px}
+.note-line{margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;color:#334155}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
+.stat{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.stat-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8}
+.stat-val{font-size:1.4rem;font-weight:700;margin:4px 0 2px}
+.stat-sub{font-size:.68rem;color:#94a3b8}
+.card{background:white;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:14px}
+.card h2{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:14px}
+.ch-tall{height:210px}.ch-sm{height:155px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px}
+.g-card{background:white;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.g-icon{font-size:1.3rem;margin-bottom:6px}
+.g-label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:6px}
+.g-text{font-size:.82rem;line-height:1.55;color:#334155}
+#inputs-card label{display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px}
+#inputs-card select,#inputs-card input{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;margin-bottom:8px;background:#fff;color:#1e293b}
+.inputs-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#inp-save{width:auto;background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:2px}
+#inp-status{font-size:.75rem;color:#16a34a;margin-left:8px}
+.pmc-strip{display:flex;gap:18px;font-size:.8rem;margin-bottom:12px;flex-wrap:wrap}
+.tp-item{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
+.tp-item:last-child{border-bottom:none}
+.tp-date{font-size:.72rem;font-weight:700;color:#7c3aed;min-width:74px}
+.tp-name{font-size:.85rem;font-weight:600}
+.tp-desc{font-size:.75rem;color:#64748b;width:100%;padding-left:84px}
+#macro-card .mg{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px}
+#macro-card .mb{background:#f8fafc;border-radius:8px;padding:10px 12px;text-align:center}
+#macro-card .mb b{display:block;font-size:1.25rem;margin-top:2px}
+#macro-card .mb span{font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8}
+#macro-card .mhead{font-size:.85rem;margin-bottom:10px;color:#334155}
+@media(max-width:700px){.stats{grid-template-columns:repeat(3,1fr)}.grid2,.grid3,.inputs-row{grid-template-columns:1fr}}
+@media(max-width:600px){#macro-card .mg{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:420px){.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<h1>&#9889; Keith's Training + Recovery Dashboard</h1>
+<div class="sub"><span id="sub-updated"></span><span class="pill" id="sub-pill">Live</span></div>
+
+<div class="toolbar">
+  <button class="tb-btn" id="btn-refresh">&#10227; Refresh now</button>
+  <div class="seg" id="range-seg">
+    <button data-r="7">7d</button><button data-r="30" class="on">30d</button><button data-r="90">90d</button>
+  </div>
+  <div class="ftpwrap">FTP <input type="range" id="ftp" min="200" max="380" step="5"><b id="ftp-val"></b>W</div>
+</div>
+
+<div class="rec">
+  <div class="rec-icon" id="rec-icon">&#128994;</div>
+  <div style="flex:1">
+    <div class="rec-title" id="rec-title"></div>
+    <div class="rec-body" id="rec-body"></div>
+    <div class="readiness-wrap"><div class="readiness-label"><span>Combined Readiness</span><span id="rd-pct"></span></div>
+    <div class="readiness-bar"><div class="readiness-fill" id="rd-fill"></div></div></div>
+    <div id="notes"></div>
+  </div>
+</div>
+
+<div class="card" id="inputs-card">
+  <h2>Daily Inputs <span style="font-weight:400">(saved on this device)</span></h2>
+  <div class="inputs-row">
+    <div>
+      <label for="inp-feel">How do you feel today?</label>
+      <select id="inp-feel"><option value="">No input</option><option value="8">Fresh &#8212; ready to go</option>
+      <option value="0">Normal</option><option value="-10">Tired &#8212; heavy legs</option><option value="-25">Wrecked &#8212; run down</option></select>
+      <label for="inp-note">Your note</label><input id="inp-note" placeholder="e.g. slept badly, legs sore">
+    </div>
+    <div>
+      <label for="inp-coach">Coach's input</label><input id="inp-coach" placeholder="e.g. Race Saturday &#8212; keep this week easy">
+      <label for="inp-weight">Your weight (lb)</label><input id="inp-weight" type="number" placeholder="e.g. 165">
+    </div>
+  </div>
+  <button id="inp-save">Save</button><span id="inp-status"></span>
+</div>
+
+<div id="tp-card"></div>
+<div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(next session)</span></h2><div id="macro-body">Enter your weight above to see the fuel plan.</div></div>
+
+<div class="stats" id="stats"></div>
+
+<div class="card"><h2>Training Load vs. WHOOP Recovery <span style="font-weight:400">(Strava bars &middot; WHOOP line)</span></h2><div class="ch-tall"><canvas id="dual"></canvas></div></div>
+<div class="card"><h2 id="pmc-h">Fitness / Fatigue / Form</h2><div class="pmc-strip" id="pmc-strip"></div><div class="ch-tall"><canvas id="pmcc"></canvas></div></div>
+<div class="grid2">
+  <div class="card"><h2>HRV (+ 7-day avg)</h2><div class="ch-sm"><canvas id="hrvc"></canvas></div></div>
+  <div class="card"><h2>Recovery (+ 7-day avg)</h2><div class="ch-sm"><canvas id="recc"></canvas></div></div>
+</div>
+<div class="card"><h2>Sleep Duration</h2><div class="ch-sm"><canvas id="slpc"></canvas></div></div>
+<div class="grid3" id="guidance"></div>
+
+<script>
+const RAW = __PAYLOAD__;
+const CACHED = "__CACHED__";
+const D = RAW.days, TP = RAW.tp || [];
+let FTP = Number(localStorage.getItem('kd_ftp')||300);
+let RANGE = Number(localStorage.getItem('kd_range')||30);
+let charts = {};
+
+document.getElementById('sub-updated').textContent = 'Updated ' + RAW.generated + '  ·  live' + (CACHED==='cached'?' (cached <15 min)':'');
+document.getElementById('btn-refresh').onclick = function(){ location.href='?fresh=1'; };
+
+function tssDay(d){
+  let t=0;
+  for(const r of (d.rides||[])){ t += r.mt * r.w * (r.w/FTP) / (FTP*3600) * 100; }
+  if(t===0) t = d.effort||0;
+  return t;
+}
+function roll7(vals){
+  return vals.map((_,i)=>{ const w=vals.slice(Math.max(0,i-6),i+1).filter(v=>v!=null); return w.length? Math.round(w.reduce((a,b)=>a+b,0)/w.length*10)/10 : null; });
+}
+function computePMC(){
+  let ctl=0,atl=0, out=[];
+  for(let i=0;i<D.length;i++){
+    const tss=tssDay(D[i]); const tsb=ctl-atl;
+    ctl += (tss-ctl)/42; atl += (tss-atl)/7;
+    out.push({ctl:Math.round(ctl*10)/10, atl:Math.round(atl*10)/10, tsb:Math.round(tsb*10)/10, tss:Math.round(tss)});
+  }
+  return out;
+}
+function slice(arr){ return arr.slice(D.length-RANGE); }
+function avg(a){ const v=a.filter(x=>x!=null); return v.length? Math.round(v.reduce((x,y)=>x+y,0)/v.length*10)/10 : null; }
+
+function tier(text){
+  const t=(text||'').toLowerCase();
+  if(!t||t.includes('rest')||t.includes('day off')) return ['Rest day',3];
+  if(['race','a:','classic',' gc '].some(w=>t.includes(w))) return ['Race',9];
+  if(['threshold','sub lt',' lt ','interval','vo2','tempo','sweet spot','big gear','hard'].some(w=>t.includes(w))) return ['Hard / intensity',8];
+  if(['long','endurance','zone 2','z2','century','3 hour','4 hour','base'].some(w=>t.includes(w))) return ['Long / endurance',7];
+  if(['skills','recovery','easy','spin','mobility','technique'].some(w=>t.includes(w))) return ['Easy / skills',4];
+  return ['Moderate',6];
+}
+
+function render(){
+  document.getElementById('ftp').value=FTP; document.getElementById('ftp-val').textContent=FTP;
+  document.querySelectorAll('#range-seg button').forEach(b=>b.classList.toggle('on', Number(b.dataset.r)===RANGE));
+
+  const pmc = computePMC();
+  const last = D[D.length-1];
+  const rec7 = D.slice(-7);
+  const w7effort = Math.round(rec7.reduce((a,d)=>a+(d.effort||0),0));
+  const w7hrs = Math.round(rec7.reduce((a,d)=>a+(d.secs||0),0)/3600*10)/10;
+  const avgHrv = avg(D.map(d=>d.hrv)), avgSlp=avg(D.map(d=>d.sleep));
+  const tRec=last.recovery, tHrv=last.hrv, tRhr=last.rhr, hasW = tRec!=null;
+
+  // readiness
+  const sf = w7effort<200?10:w7effort<350?28:w7effort<500?55:w7effort<650?72:88;
+  let baseReadiness=null;
+  if(hasW){ baseReadiness = Math.round(tRec*0.6 + (100-sf)*0.4); if(tHrv&&avgHrv&&tHrv<avgHrv*0.9) baseReadiness=Math.round(baseReadiness*0.88); }
+  const feel = localStorage.getItem('kd_feel')||'';
+  let readiness = baseReadiness;
+  if(baseReadiness!=null && feel!=='') readiness = Math.max(0,Math.min(100, Math.round(baseReadiness + Number(feel))));
+
+  // rec card
+  const rc = document.querySelector('.rec');
+  function zone(r){
+    if(r>=72) return ['#f0fdf4','#86efac','🚴','#22c55e','Go Time — Readiness '+r+'%','Quality day: threshold ('+Math.round(FTP*0.95)+'–'+Math.round(FTP*1.05)+'W) or sweet spot ('+Math.round(FTP*0.85)+'–'+Math.round(FTP*0.95)+'W). Full Z2 warmup first.'];
+    if(r>=50) return ['#fefce8','#fde047','🚴','#f59e0b','Moderate Readiness ('+r+'%) — Stay Controlled','Zone 2 only ('+Math.round(FTP*0.55)+'–'+Math.round(FTP*0.75)+'W). Save intensity for a green day.'];
+    return ['#fef2f2','#fca5a5','😴','#ef4444','Rest Day — Readiness '+r+'%','Rest or a very easy spin. Prioritize 8+ hrs sleep tonight.'];
+  }
+  if(readiness!=null){
+    const z=zone(readiness);
+    rc.style.background=z[0]; rc.style.borderColor=z[1];
+    document.getElementById('rec-icon').textContent=z[2];
+    document.getElementById('rec-title').textContent=z[4];
+    let body=z[5]; if(feel!=='') body+=' (Base '+baseReadiness+'% from WHOOP+Strava, adjusted for how you feel.)';
+    document.getElementById('rec-body').textContent=body;
+    document.getElementById('rd-pct').textContent=readiness+'%';
+    document.getElementById('rd-fill').style.width=readiness+'%';
+    document.getElementById('rd-fill').style.background=z[3];
+  } else {
+    document.getElementById('rec-title').textContent='Training Load '+(sf>=72?'High':'Manageable');
+    document.getElementById('rec-body').textContent=w7effort+' RE over 7 days. No WHOOP score today — go by feel.';
+    document.getElementById('rd-pct').textContent='—';
+  }
+  // notes
+  const notes=document.getElementById('notes'); notes.innerHTML='';
+  const coach=localStorage.getItem('kd_coach')||'', note=localStorage.getItem('kd_note')||'';
+  if(coach){ const e=document.createElement('div'); e.className='note-line'; e.textContent='🗣️ Coach: '+coach; notes.appendChild(e); }
+  if(note){ const e=document.createElement('div'); e.className='note-line'; e.textContent='📝 You: '+note; notes.appendChild(e); }
+
+  // stats
+  const stat=(l,v,s,c)=>'<div class="stat"><div class="stat-label">'+l+'</div><div class="stat-val" style="color:'+c+'">'+v+'</div><div class="stat-sub">'+s+'</div></div>';
+  document.getElementById('stats').innerHTML =
+    stat('Recovery', hasW?tRec+'%':'—','WHOOP %','#22c55e')+
+    stat('HRV', tHrv!=null?Math.round(tHrv):'—','ms','#6366f1')+
+    stat('RHR', tRhr!=null?Math.round(tRhr):'—','bpm','#ef4444')+
+    stat('7-Day Load', w7effort,'rel effort','#f59e0b')+
+    stat('7-Day Hours', w7hrs,'hrs riding','#3b82f6')+
+    stat('Avg Sleep', avgSlp!=null?avgSlp:'—','hrs · '+D.length+'d','#8b5cf6');
+
+  // pmc strip + heading
+  const pn=pmc[pmc.length-1], ramp = pmc.length>=8? Math.round((pmc[pmc.length-1].ctl-pmc[pmc.length-8].ctl)*10)/10 : 0;
+  document.getElementById('pmc-h').innerHTML='Fitness / Fatigue / Form <span style="font-weight:400">(from Strava power at FTP '+FTP+'W)</span>';
+  document.getElementById('pmc-strip').innerHTML =
+    '<span style="color:#3b82f6"><b>Fitness (CTL): '+pn.ctl+'</b></span><span style="color:#ec4899"><b>Fatigue (ATL): '+pn.atl+'</b></span>'+
+    '<span style="color:#f59e0b"><b>Form (TSB): '+(pn.tsb>=0?'+':'')+pn.tsb+'</b></span><span style="color:#8b5cf6"><b>Ramp: '+(ramp>=0?'+':'')+ramp+' CTL/wk</b></span>';
+
+  // TP list
+  const tpEl=document.getElementById('tp-card');
+  if(TP.length){
+    let items='';
+    for(const e of TP){
+      let lbl=e.date; try{const dt=new Date(e.date.slice(0,4)+'-'+e.date.slice(4,6)+'-'+e.date.slice(6,8)); lbl=dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(x){}
+      const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      items+='<div class="tp-item"><span class="tp-date">'+lbl+'</span><span class="tp-name">'+esc(e.summary)+'</span>'+(e.desc?'<span class="tp-desc">'+esc(e.desc)+'</span>':'')+'</div>';
+    }
+    tpEl.innerHTML='<div class="card"><h2>Up Next from TrainingPeaks <span style="font-weight:400">(planned)</span></h2>'+items+'</div>';
+  } else tpEl.innerHTML='';
+
+  // macro
+  const today=new Date().toISOString().slice(0,10).replace(/-/g,''); const tomo=new Date(Date.now()+864e5).toISOString().slice(0,10).replace(/-/g,'');
+  let nw=TP.find(e=>e.date===today||e.date===tomo)||TP[0]||null;
+  const mb=document.getElementById('macro-body'); const lb=Number(localStorage.getItem('kd_weight')||0);
+  if(!lb){ mb.textContent='Enter your weight above to see the fuel plan.'; }
+  else {
+    const kg=lb/2.205; const [tn,cg]= nw? tier(nw.summary):['Rest day',3];
+    const carbs=Math.round(kg*cg), protein=Math.round(kg*1.8), fat=Math.round(kg*1.0), cals=carbs*4+protein*4+fat*9;
+    const when= nw? (nw.date===today?'Today: ':nw.date===tomo?'Tomorrow: ':''):'';
+    const tips={'Hard / intensity':'Top off carbs before; 60–90g carbs/hr on the bike. Protein within 30 min after.','Race':'Race fuel: 80–100g carbs/hr, pre-load the night before.','Long / endurance':'Steady 60–80g carbs/hr on long rides. Refuel within the hour after.','Easy / skills':'Lighter day — carbs around the ride. Keep protein steady.','Moderate':'Moderate carbs around the session. Protein across the day.','Rest day':'Lower carbs, keep protein high for recovery.'};
+    mb.innerHTML='<div class="mhead"><b>'+when+(nw?nw.summary:'No planned workout')+'</b> · '+tn+'</div><div class="mg">'+
+      '<div class="mb"><span>Calories</span><b>'+cals.toLocaleString()+'</b></div><div class="mb"><span>Carbs</span><b>'+carbs+'g</b></div>'+
+      '<div class="mb"><span>Protein</span><b>'+protein+'g</b></div><div class="mb"><span>Fat</span><b>'+fat+'g</b></div></div>'+
+      '<div class="mhead" style="margin-top:10px">'+(tips[tn]||'')+'</div>';
+  }
+
+  // guidance
+  let gRec,gNut,gNxt;
+  if(readiness!=null&&readiness<50){ gRec='WHOOP says rest — aim for 8.5–9 hrs tonight, elevate legs 20 min.'; }
+  else if(tHrv&&avgHrv&&tHrv<avgHrv*0.9){ gRec='HRV suppressed vs baseline — extra sleep beats extra training. 8+ hrs, no caffeine after noon.'; }
+  else if(sf>=55){ gRec='High load week — aim for 8 hrs. If tomorrow’s recovery <65%, hold intensity.'; }
+  else { gRec='Well-recovered. 7.5–8 hrs protects your HRV baseline. Light foam rolling tonight.'; }
+  gNxt = (readiness!=null&&readiness>=72&&sf<55)?'Ideal for quality: 2×20 min sweet spot or 3×12 min threshold.':(readiness!=null&&readiness>=72)?'Good recovery but high load — 90-min Zone 2 endurance is the best next session.':'Let the body recover. Next quality session when WHOOP ≥ 70%.';
+  gNut = 'See the Fuel Plan above for today’s macro targets based on your next workout.';
+  const g=(i,l,t)=>'<div class="g-card"><div class="g-icon">'+i+'</div><div class="g-label">'+l+'</div><div class="g-text">'+t+'</div></div>';
+  document.getElementById('guidance').innerHTML=g('😴','Recovery',gRec)+g('🥗','Nutrition',gNut)+g('🎯','Next Session',gNxt);
+
+  drawCharts(pmc);
+}
+
+function drawCharts(pmc){
+  Object.values(charts).forEach(c=>c&&c.destroy());
+  const dd=slice(D), pp=slice(pmc);
+  const labels=dd.map(d=>d.label);
+  const base={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},elements:{point:{radius:0,hoverRadius:4}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,maxRotation:0}},y:{grid:{color:'#f1f5f9'}}}};
+  const eff=dd.map(d=>d.effort||0);
+  const barC=eff.map(e=>e===0?'#e2e8f0':e<=60?'#86efac':e<=110?'#fde047':e<=160?'#fb923c':'#f87171');
+  charts.dual=new Chart(dual.getContext('2d'),{type:'bar',data:{labels,datasets:[
+    {label:'Load',data:eff,backgroundColor:barC,borderRadius:3,yAxisID:'y1',order:2},
+    {label:'Recovery',data:dd.map(d=>d.recovery),type:'line',borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',fill:true,tension:.4,pointRadius:2,yAxisID:'y2',order:1,spanGaps:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,maxRotation:0}},y1:{type:'linear',position:'left',beginAtZero:true,grid:{color:'#f1f5f9'}},y2:{type:'linear',position:'right',min:0,max:100,grid:{drawOnChartArea:false},ticks:{color:'#22c55e'}}}}});
+  charts.pmc=new Chart(pmcc.getContext('2d'),{type:'line',data:{labels,datasets:[
+    {label:'Fitness (CTL)',data:pp.map(p=>p.ctl),borderColor:'#3b82f6',borderWidth:2.5,tension:.35,pointRadius:0},
+    {label:'Fatigue (ATL)',data:pp.map(p=>p.atl),borderColor:'#ec4899',borderWidth:1.5,tension:.35,pointRadius:0},
+    {label:'Form (TSB)',data:pp.map(p=>p.tsb),borderColor:'#f59e0b',borderWidth:2,tension:.35,pointRadius:0,fill:{target:{value:0},above:'rgba(245,158,11,.06)',below:'rgba(239,68,68,.10)'}}]},
+    options:Object.assign({},base,{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:18,font:{size:10}}},tooltip:{mode:'index',intersect:false}}})});
+  const hrvA=roll7(D.map(d=>d.hrv)), recA=roll7(D.map(d=>d.recovery));
+  charts.hrv=new Chart(hrvc.getContext('2d'),{type:'line',data:{labels,datasets:[
+    {data:dd.map(d=>d.hrv),borderColor:'#a5b4fc',borderWidth:1.5,backgroundColor:'rgba(99,102,241,.08)',fill:true,tension:.3,pointRadius:0},
+    {data:slice(hrvA),borderColor:'#6366f1',borderWidth:2.5,tension:.4,pointRadius:0}]},options:base});
+  charts.rec=new Chart(recc.getContext('2d'),{type:'line',data:{labels,datasets:[
+    {data:dd.map(d=>d.recovery),borderColor:'#86efac',borderWidth:1.5,backgroundColor:'rgba(34,197,94,.08)',fill:true,tension:.3,pointRadius:0},
+    {data:slice(recA),borderColor:'#22c55e',borderWidth:2.5,tension:.4,pointRadius:0}]},options:Object.assign({},base,{scales:Object.assign({},base.scales,{y:{min:0,max:100,grid:{color:'#f1f5f9'}}})})});
+  charts.slp=new Chart(slpc.getContext('2d'),{type:'line',data:{labels,datasets:[
+    {data:dd.map(d=>d.sleep),borderColor:'#93c5fd',borderWidth:1.5,backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:.3,pointRadius:0}]},options:base});
+}
+
+// controls
+document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); });
+document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); }});
+['inp-feel','inp-note','inp-coach','inp-weight'].forEach(id=>{ const el=document.getElementById(id); const k='kd_'+id.split('-')[1]; el.value=localStorage.getItem(k)||''; });
+document.getElementById('inp-save').addEventListener('click',function(){
+  ['feel','note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
+  render(); const s=document.getElementById('inp-status'); s.textContent='Saved'; setTimeout(()=>s.textContent='',2500);
+});
+render();
+</script>
+</body>
+</html>

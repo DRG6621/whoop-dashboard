@@ -1,6 +1,8 @@
 {
   "framework": null,
   "buildCommand": null,
-  "installCommand": null,
-  "outputDirectory": "."
+  "installCommand": "pip install -r requirements.txt",
+  "rewrites": [
+    { "source": "/", "destination": "/api/index" }
+  ]
 }
