@@ -9,6 +9,9 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+def _env(k, d=""):
+    return (os.environ.get(k, d) or "").strip()
+
 WHOOP_BASE   = "https://api.prod.whoop.com/developer"
 WHOOP_TOKEN  = "https://api.prod.whoop.com/oauth/oauth2/token"
 STRAVA_BASE  = "https://www.strava.com/api/v3"
@@ -18,8 +21,8 @@ CACHE_TTL    = 900  # 15 minutes
 
 # ---- Upstash KV (persistent store for the rotating WHOOP token + cache) ----
 def _kv_cfg():
-    url = os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")
-    tok = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    url = _env("KV_REST_API_URL") or _env("UPSTASH_REDIS_REST_URL")
+    tok = _env("KV_REST_API_TOKEN") or _env("UPSTASH_REDIS_REST_TOKEN")
     return url, tok
 
 def kv_get(key):
@@ -40,14 +43,14 @@ def kv_set(key, value):
 
 # ---- token management ----
 def whoop_refresh_token():
-    return kv_get("whoop_refresh") or os.environ.get("WHOOP_REFRESH_TOKEN", "")
+    return kv_get("whoop_refresh") or _env("WHOOP_REFRESH_TOKEN")
 
 def refresh_whoop():
     rt = whoop_refresh_token()
     r = requests.post(WHOOP_TOKEN, data={
         "grant_type": "refresh_token", "refresh_token": rt,
-        "client_id": os.environ["WHOOP_CLIENT_ID"],
-        "client_secret": os.environ["WHOOP_CLIENT_SECRET"],
+        "client_id": _env("WHOOP_CLIENT_ID"),
+        "client_secret": _env("WHOOP_CLIENT_SECRET"),
     }, timeout=30)
     r.raise_for_status()
     data = r.json()
@@ -61,8 +64,8 @@ def exchange_auth(code):
     r = requests.post(WHOOP_TOKEN, data={
         "grant_type": "authorization_code",
         "code": code,
-        "client_id": os.environ["WHOOP_CLIENT_ID"],
-        "client_secret": os.environ["WHOOP_CLIENT_SECRET"],
+        "client_id": _env("WHOOP_CLIENT_ID"),
+        "client_secret": _env("WHOOP_CLIENT_SECRET"),
         "redirect_uri": "http://localhost:8080/callback",
     }, timeout=30)
     if r.status_code != 200:
@@ -75,9 +78,9 @@ def exchange_auth(code):
 def refresh_strava():
     r = requests.post(STRAVA_TOKEN, data={
         "grant_type": "refresh_token",
-        "refresh_token": os.environ["STRAVA_REFRESH_TOKEN"],
-        "client_id": os.environ["STRAVA_CLIENT_ID"],
-        "client_secret": os.environ["STRAVA_CLIENT_SECRET"],
+        "refresh_token": _env("STRAVA_REFRESH_TOKEN"),
+        "client_id": _env("STRAVA_CLIENT_ID"),
+        "client_secret": _env("STRAVA_CLIENT_SECRET"),
     }, timeout=30)
     r.raise_for_status()
     return r.json()
@@ -153,7 +156,7 @@ def fetch_strava(token):
     return by_day
 
 def fetch_tp():
-    url = os.environ.get("TP_ICAL_URL", "")
+    url = _env("TP_ICAL_URL")
     if not url:
         return []
     try:
