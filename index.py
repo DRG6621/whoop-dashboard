@@ -56,6 +56,22 @@ def refresh_whoop():
         kv_set("whoop_refresh", new)
     return data
 
+def exchange_auth(code):
+    """One-time: exchange a WHOOP authorization code for a fresh refresh token, store in KV."""
+    r = requests.post(WHOOP_TOKEN, data={
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": os.environ["WHOOP_CLIENT_ID"],
+        "client_secret": os.environ["WHOOP_CLIENT_SECRET"],
+        "redirect_uri": "http://localhost:8080/callback",
+    }, timeout=30)
+    if r.status_code != 200:
+        return None, (str(r.status_code) + " " + r.text)
+    rt = r.json().get("refresh_token", "")
+    if rt:
+        kv_set("whoop_refresh", rt)
+    return rt, None
+
 def refresh_strava():
     r = requests.post(STRAVA_TOKEN, data={
         "grant_type": "refresh_token",
@@ -230,7 +246,16 @@ def render(data, cached):
     return page.replace("__PAYLOAD__", payload).replace("__CACHED__", "cached" if cached else "fresh")
 
 def app(environ, start_response):
-    fresh = "fresh=1" in (environ.get("QUERY_STRING", "") or "")
+    qs = environ.get("QUERY_STRING", "") or ""
+    params = urllib.parse.parse_qs(qs)
+    seed = params.get("seed", [""])[0]
+    if seed:
+        rt, err = exchange_auth(seed)
+        msg = ("WHOOP re-auth OK \u2014 fresh token stored. You can remove ?seed and reload." if rt
+               else ("WHOOP re-auth FAILED: " + (err or "no token")))
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [("<h2>" + msg + "</h2>").encode("utf-8")]
+    fresh = "fresh=1" in qs
     try:
         data, cached = get_payload(fresh)
         body = render(data, cached).encode("utf-8")
