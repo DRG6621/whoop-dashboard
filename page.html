@@ -100,6 +100,8 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
   </div>
 </div>
 
+<div id="vitals-card"></div>
+
 <div class="card" id="inputs-card">
   <h2>Daily Inputs <span style="font-weight:400">(saved on this device)</span></h2>
   <div class="inputs-row">
@@ -135,6 +137,7 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
   <div class="card"><h2>Recovery (+ 7-day avg)</h2><div class="ch-sm"><canvas id="recc"></canvas></div></div>
 </div>
 <div class="card"><h2>Sleep Duration</h2><div class="ch-sm"><canvas id="slpc"></canvas></div></div>
+<div class="card" id="steps-card" style="display:none"><h2>Daily Steps <span style="font-weight:400">(Withings)</span></h2><div class="ch-sm"><canvas id="stepc"></canvas></div></div>
 <div class="grid3" id="guidance"></div>
 
 <script>
@@ -230,6 +233,29 @@ function render(){
   const offP=localStorage.getItem('kd_offplan')==='1', offPn=localStorage.getItem('kd_offplannote')||'';
   if(offP){ const e=document.createElement('div'); e.className='note-line'; e.style.background='#fff7ed'; e.style.color='#9a3412'; e.textContent='🚩 Off-plan today'+(offPn?': '+offPn:''); notes.appendChild(e); }
 
+  // vitals (Withings: weight, blood pressure, steps)
+  function lastNN(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
+  const wRow=lastNN('weight'), withWeight=wRow?wRow.weight:null;
+  const bpRow=lastNN('systolic');
+  const stepsToday = last.steps!=null?last.steps:null;
+  const steps7 = D.slice(-7).map(d=>d.steps).filter(v=>v!=null);
+  const steps7avg = steps7.length? Math.round(steps7.reduce((a,b)=>a+b,0)/steps7.length):null;
+  let bpWhen='';
+  if(bpRow&&bpRow.bp_ts){ try{ bpWhen=new Date(bpRow.bp_ts*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){} }
+  const vc=document.getElementById('vitals-card');
+  if(withWeight!=null||bpRow||stepsToday!=null){
+    const cell=(l,v,s)=>'<div style="background:#f8fafc;border-radius:8px;padding:11px 12px;text-align:center"><span style="font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8">'+l+'</span><b style="display:block;font-size:1.2rem;margin-top:3px">'+v+'</b>'+(s?'<div style="font-size:.62rem;color:#94a3b8;margin-top:2px">'+s+'</div>':'')+'</div>';
+    vc.innerHTML='<div class="card"><h2>Body &amp; Vitals <span style="font-weight:400">(Withings)</span></h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'+
+      cell('Weight', withWeight!=null?withWeight+' lb':'—', wRow&&wRow.fat!=null?wRow.fat+'% fat':(wRow?wRow.label:''))+
+      cell('Blood Pressure', bpRow?bpRow.systolic+'/'+bpRow.diastolic:'—', bpRow?(bpWhen+(bpRow.bp_hr?' · '+bpRow.bp_hr+' bpm':'')):'mmHg')+
+      cell('Steps Today', stepsToday!=null?stepsToday.toLocaleString():'—','')+
+      cell('7-Day Avg Steps', steps7avg!=null?steps7avg.toLocaleString():'—','')+
+    '</div></div>';
+  } else {
+    vc.innerHTML='<div class="card"><h2>Body &amp; Vitals</h2><div class="g-text">Connect your Withings scale, BPM Vision cuff, or watch to auto-sync weight, blood pressure, and steps. <a href="/?wauth=1" style="color:#7c3aed;font-weight:700;text-decoration:none">Connect Withings &#8594;</a></div></div>';
+  }
+  document.getElementById('steps-card').style.display = (steps7.length||stepsToday!=null)?'':'none';
+
   // stats
   function lastScored(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
   const rw = lastScored('recovery');
@@ -265,8 +291,8 @@ function render(){
   // macro
   const today=new Date().toISOString().slice(0,10).replace(/-/g,''); const tomo=new Date(Date.now()+864e5).toISOString().slice(0,10).replace(/-/g,'');
   let nw=TP.find(e=>e.date===today||e.date===tomo)||TP[0]||null;
-  const mb=document.getElementById('macro-body'); const lb=Number(localStorage.getItem('kd_weight')||0);
-  if(!lb){ mb.textContent='Enter your weight above to see the fuel plan.'; }
+  const mb=document.getElementById('macro-body'); const lb=(withWeight!=null?withWeight:Number(localStorage.getItem('kd_weight')||0));
+  if(!lb){ mb.textContent='Enter your weight above (or connect Withings) to see the fuel plan.'; }
   else {
     const kg=lb/2.205; const [tn,cg]= nw? tier(nw.summary):['Rest day',3];
     const carbs=Math.round(kg*cg), protein=Math.round(kg*1.8), fat=Math.round(kg*1.0), cals=carbs*4+protein*4+fat*9;
@@ -304,7 +330,13 @@ function render(){
     sevenDayHours: w7hrs,
     ctl: pn.ctl, atl: pn.atl, tsb: pn.tsb, rampPerWeek: ramp,
     ftp: FTP,
-    weightLb: lb||null,
+    weightLb: (withWeight!=null?withWeight:(lb||null)),
+    stepsToday: stepsToday,
+    steps7avg: steps7avg,
+    bpSys: bpRow?bpRow.systolic:null,
+    bpDia: bpRow?bpRow.diastolic:null,
+    bpHr: bpRow?bpRow.bp_hr:null,
+    bpWhen: bpWhen||null,
     coachNote: coach||'',
     yourNote: note||'',
     offPlan: localStorage.getItem('kd_offplan')==='1',
@@ -341,6 +373,11 @@ function drawCharts(pmc){
     {data:slice(recA),borderColor:'#22c55e',borderWidth:2.5,tension:.4,pointRadius:0}]},options:Object.assign({},base,{scales:Object.assign({},base.scales,{y:{min:0,max:100,grid:{color:'#f1f5f9'}}})})});
   charts.slp=new Chart(slpc.getContext('2d'),{type:'line',data:{labels,datasets:[
     {data:dd.map(d=>d.sleep),borderColor:'#93c5fd',borderWidth:1.5,backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:.3,pointRadius:0}]},options:base});
+  const stepData=dd.map(d=>d.steps);
+  if(stepData.some(v=>v!=null)){
+    charts.step=new Chart(stepc.getContext('2d'),{type:'bar',data:{labels,datasets:[
+      {data:stepData,backgroundColor:'#c4b5fd',borderRadius:3}]},options:base});
+  }
 }
 
 // controls

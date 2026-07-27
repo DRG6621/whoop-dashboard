@@ -191,6 +191,110 @@ def fetch_tp():
            if e.get("date", "") >= today and e.get("summary")]
     return out[:12]
 
+# ---- Withings (weight / body comp, blood pressure, steps) ----
+WITHINGS_AUTH     = "https://account.withings.com/oauth2_user/authorize2"
+WITHINGS_TOKEN    = "https://wbsapi.withings.net/v2/oauth2"
+WITHINGS_MEASURE  = "https://wbsapi.withings.net/measure"
+WITHINGS_ACTIVITY = "https://wbsapi.withings.net/v2/measure"
+WITHINGS_SCOPE    = "user.metrics,user.activity"
+
+def withings_configured():
+    return bool(_env("WITHINGS_CLIENT_ID") and _env("WITHINGS_CLIENT_SECRET"))
+
+def withings_authorize_url(redirect):
+    return (WITHINGS_AUTH + "?response_type=code"
+            "&client_id=" + urllib.parse.quote(_env("WITHINGS_CLIENT_ID")) +
+            "&scope=" + urllib.parse.quote(WITHINGS_SCOPE) +
+            "&redirect_uri=" + urllib.parse.quote(redirect) +
+            "&state=withings")
+
+def exchange_withings_auth(code, redirect):
+    try:
+        r = requests.post(WITHINGS_TOKEN, data={
+            "action": "requesttoken", "grant_type": "authorization_code", "code": code,
+            "client_id": _env("WITHINGS_CLIENT_ID"), "client_secret": _env("WITHINGS_CLIENT_SECRET"),
+            "redirect_uri": redirect,
+        }, timeout=30)
+        j = r.json()
+    except Exception as e:
+        return False, str(e)[:160]
+    if j.get("status") != 0:
+        return False, json.dumps(j)[:200]
+    b = j.get("body", {})
+    if b.get("refresh_token"):
+        kv_set("withings_refresh", b["refresh_token"])
+    if b.get("userid") is not None:
+        kv_set("withings_userid", str(b.get("userid")))
+    return True, None
+
+def refresh_withings():
+    rt = kv_get("withings_refresh") or _env("WITHINGS_REFRESH_TOKEN")
+    if not rt or not withings_configured():
+        return None
+    try:
+        r = requests.post(WITHINGS_TOKEN, data={
+            "action": "requesttoken", "grant_type": "refresh_token", "refresh_token": rt,
+            "client_id": _env("WITHINGS_CLIENT_ID"), "client_secret": _env("WITHINGS_CLIENT_SECRET"),
+        }, timeout=30)
+        j = r.json()
+    except Exception:
+        return None
+    if j.get("status") != 0:
+        return None
+    b = j.get("body", {})
+    if b.get("refresh_token"):
+        kv_set("withings_refresh", b["refresh_token"])
+    return b.get("access_token")
+
+def fetch_withings(access_token):
+    """Returns {date: {weight, fat, systolic, diastolic, bp_hr, bp_ts, steps}}."""
+    out = {}
+    if not access_token:
+        return out
+    hdr = {"Authorization": "Bearer " + access_token}
+    start = int((datetime.now(timezone.utc) - timedelta(days=DAYS)).timestamp())
+    end = int(datetime.now(timezone.utc).timestamp())
+    # measures: weight(1), fat ratio(6), diastolic(9), systolic(10), hr(11)
+    try:
+        r = requests.post(WITHINGS_MEASURE, headers=hdr, data={
+            "action": "getmeas", "meastypes": "1,6,9,10,11", "category": "1",
+            "startdate": start, "enddate": end,
+        }, timeout=30)
+        for g in r.json().get("body", {}).get("measuregrps", []):
+            ts = g.get("date", 0)
+            dkey = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
+            rec = out.setdefault(dkey, {})
+            for m in g.get("measures", []):
+                val = m["value"] * (10 ** m["unit"])
+                t = m["type"]
+                if t == 1:
+                    rec["weight"] = round(val * 2.2046226, 1)  # kg -> lb
+                elif t == 6:
+                    rec["fat"] = round(val, 1)
+                elif t == 10:
+                    rec["systolic"] = round(val); rec["bp_ts"] = ts
+                elif t == 9:
+                    rec["diastolic"] = round(val); rec["bp_ts"] = ts
+                elif t == 11:
+                    rec["bp_hr"] = round(val)
+    except Exception:
+        pass
+    # activity: steps
+    try:
+        sday = (datetime.now(timezone.utc) - timedelta(days=DAYS)).strftime("%Y-%m-%d")
+        eday = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        r = requests.post(WITHINGS_ACTIVITY, headers=hdr, data={
+            "action": "getactivity", "startdateymd": sday, "enddateymd": eday,
+            "data_fields": "steps,distance,calories",
+        }, timeout=30)
+        for a in r.json().get("body", {}).get("activities", []):
+            dkey = a.get("date")
+            if dkey and a.get("steps") is not None:
+                out.setdefault(dkey, {})["steps"] = a.get("steps")
+    except Exception:
+        pass
+    return out
+
 # ---- payload assembly with cache ----
 def build_payload():
     wt = refresh_whoop()
@@ -198,6 +302,13 @@ def build_payload():
     whoop = fetch_whoop(wt)
     strava = fetch_strava(st)
     tp = fetch_tp()
+    withings = {}
+    try:
+        wa = refresh_withings()
+        if wa:
+            withings = fetch_withings(wa)
+    except Exception:
+        withings = {}
     now = datetime.now(timezone.utc)
     days = []
     for i in range(DAYS - 1, -1, -1):
@@ -205,14 +316,19 @@ def build_payload():
         k = d.strftime("%Y-%m-%d")
         w = whoop.get(k, {})
         s = strava.get(k, {})
+        wi = withings.get(k, {})
         days.append({
             "date": k, "label": d.strftime("%b ") + str(d.day),
             "hrv": w.get("hrv"), "rhr": w.get("rhr"),
             "recovery": w.get("recovery"), "sleep": w.get("sleep"),
             "effort": s.get("effort", 0), "kj": s.get("kj", 0),
             "secs": s.get("secs", 0), "rides": s.get("rides", []),
+            "weight": wi.get("weight"), "fat": wi.get("fat"), "steps": wi.get("steps"),
+            "systolic": wi.get("systolic"), "diastolic": wi.get("diastolic"),
+            "bp_hr": wi.get("bp_hr"), "bp_ts": wi.get("bp_ts"),
         })
-    return {"generated": now.strftime("%B %d, %Y %H:%M UTC"), "days": days, "tp": tp}
+    return {"generated": now.strftime("%B %d, %Y %H:%M UTC"), "days": days, "tp": tp,
+            "withings": withings_configured() and bool(kv_get("withings_refresh") or _env("WITHINGS_REFRESH_TOKEN"))}
 
 def get_payload(fresh):
     if not fresh:
@@ -289,6 +405,13 @@ def _ctx_text(ctx):
             ctx.get("ctl"), ctx.get("atl"), ctx.get("tsb"), ctx.get("rampPerWeek")),
         "FTP %sW, body weight %s lb" % (ctx.get("ftp"), ctx.get("weightLb")),
     ]
+    if ctx.get("stepsToday") is not None:
+        L.append("Steps today: %s (7-day avg %s)" % (ctx.get("stepsToday"), ctx.get("steps7avg")))
+    if ctx.get("bpSys"):
+        L.append("Latest blood pressure: %s/%s mmHg%s%s" % (
+            ctx.get("bpSys"), ctx.get("bpDia"),
+            (" HR %s" % ctx.get("bpHr")) if ctx.get("bpHr") else "",
+            (" measured %s" % ctx.get("bpWhen")) if ctx.get("bpWhen") else ""))
     if ctx.get("coachNote"):
         L.append("Coach's note: %s" % ctx.get("coachNote"))
     if ctx.get("yourNote"):
@@ -391,6 +514,24 @@ def app(environ, start_response):
 
     qs = environ.get("QUERY_STRING", "") or ""
     params = urllib.parse.parse_qs(qs)
+
+    # Withings OAuth — redirect URI is this app's root.
+    host = environ.get("HTTP_HOST", "")
+    redirect_uri = ("https://" + host + "/") if host else _env("WITHINGS_REDIRECT")
+    if params.get("wauth"):
+        if not withings_configured():
+            start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+            return [b"<h2>Add WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET in Vercel first, then reload this link.</h2>"]
+        start_response("302 Found", [("Location", withings_authorize_url(redirect_uri))])
+        return [b""]
+    if params.get("state", [""])[0] == "withings" and params.get("code", [""])[0]:
+        ok, err = exchange_withings_auth(params.get("code", [""])[0], redirect_uri)
+        msg = ("Withings connected — weight, blood pressure &amp; steps will sync on the next refresh. "
+               "<a href='/?fresh=1'>Open your dashboard</a>." if ok
+               else ("Withings connect failed: " + (err or "unknown")))
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        return [("<h2>" + msg + "</h2>").encode("utf-8")]
+
     seed = params.get("seed", [""])[0]
     if seed:
         rt, err = exchange_auth(seed)
