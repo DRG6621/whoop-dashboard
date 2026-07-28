@@ -483,6 +483,8 @@ def _ctx_text(ctx):
             (" What they're doing instead: %s." % note) if note else ""))
     if ctx.get("extraWorkouts"):
         L.append("Extra/weekend workouts not in TrainingPeaks: %s" % str(ctx.get("extraWorkouts"))[:300])
+    if ctx.get("otherActivities"):
+        L.append("Other non-bike activity today: %s" % str(ctx.get("otherActivities"))[:300])
     L.append("Next planned workout: %s" % (ctx.get("nextWorkout") or "none scheduled"))
     up = ctx.get("upcoming") or []
     if isinstance(up, list) and up:
@@ -594,7 +596,11 @@ MEALPLAN_SYSTEM = (
     "(rest-day template on days with no ride). Output EXACTLY this structure in markdown:\n"
     "**WEEK AT A GLANCE** - one line per day: day, workout, template used, ~carb total.\n"
     "**DAILY PLANS** - for each day: each meal with time, what to eat as a concrete sample meal with amounts "
-    "(e.g. '6oz grilled chicken, 2 cups broccoli, 1.5 cups cooked rice'), matching the template's protein/veggie/fat/carb targets.\n"
+    "(e.g. '6oz grilled chicken, 2 cups broccoli, 1.5 cups cooked rice'), matching the template's protein/veggie/fat/carb targets. "
+    "END EVERY MEAL LINE with its macro breakdown in brackets: [P 25g / C 75g / F 7g / ~450 kcal]. "
+    "On training days include a 'During ride' entry showing workout carbs: total grams, grams per hour, and ~kcal "
+    "(e.g. 'During ride (2h): 150g workout carbs (~75g/hr, ~600 kcal) - sports drink + gels, sip every 15-20 min'). "
+    "End each day with a DAY TOTAL macro line.\n"
     "**3 RECIPES** - three simple recipes for the week using the plan's foods, with ingredients + steps (5-8 steps max).\n"
     "**MEAL PREP** - a short Sunday/midweek prep strategy (batch cooking, portions).\n"
     "**SHOPPING LIST** - consolidated by category (protein/produce/carbs/fats/workout fuel) with rough quantities for the week.\n"
@@ -621,6 +627,9 @@ def handle_meal_plan(environ):
     extra = (ctx.get("extraWorkouts") or "").strip()
     if extra:
         week += ". ADDITIONAL workouts not in TrainingPeaks (treat as training days, fuel accordingly): " + extra[:400]
+    other = (ctx.get("otherActivities") or "").strip()
+    if other:
+        week += ". Other non-bike activity (hiking/walking/strength/yard work - adds energy demand): " + other[:300]
     user = (
         "Mode: %s. Current weight: %s lb (body fat %s%%, muscle %s lb). Target weight: %s lb. FTP %sW.\n"
         "Upcoming TrainingPeaks week: %s\n"

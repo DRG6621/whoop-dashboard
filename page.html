@@ -139,6 +139,16 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
     </label>
     <input id="inp-offplannote" placeholder="What are you doing instead? e.g. spontaneous group ride, skipping the intervals" style="margin-top:8px">
   </div>
+  <div style="margin-top:10px;padding-top:12px;border-top:1px solid #f1f5f9">
+    <label style="margin-bottom:6px">&#129406; Other activity today (not on Strava) &#8212; hike, walk, strength, yard work&#8230;</label>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px">
+      <input id="inp-otheract" placeholder="e.g. strength training">
+      <input id="inp-otherdur" type="number" min="0" placeholder="minutes">
+      <select id="inp-otherint"><option value="">Intensity&#8230;</option><option value="easy">Easy</option><option value="moderate">Moderate</option><option value="hard">Hard</option></select>
+      <input id="inp-othertss" type="number" min="0" placeholder="TSS (optional)">
+    </div>
+    <div style="font-size:.68rem;color:#94a3b8;margin-top:4px">Counts toward today's training stress and is factored into coaching &amp; fueling. Leave TSS blank to auto-estimate from time &times; intensity.</div>
+  </div>
   <button id="inp-save">Save</button><span id="inp-status"></span>
 </div>
 
@@ -196,7 +206,13 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 </div>
 
 <div id="tp-card"></div>
-<div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(next session)</span></h2><div id="macro-body">Enter your weight above to see the fuel plan.</div></div>
+<div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(today &middot; your coach's templates)</span></h2>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <label style="font-size:.75rem;font-weight:600;color:#64748b">Today's ride time</label>
+    <input id="fuel-dur" type="number" min="0" max="360" step="15" style="width:80px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b">
+    <span style="font-size:.75rem;color:#94a3b8">minutes (0 = rest day) &#8212; carbs &amp; ride fueling adjust automatically</span>
+  </div>
+  <div id="macro-body"></div></div>
 
 <div class="card" id="nutri-card">
   <h2>&#129367; Nutrition Consultant <span style="font-weight:400">(your coach's diet system &middot; built around your training week)</span></h2>
@@ -257,10 +273,21 @@ function tssDay(d){
 function roll7(vals){
   return vals.map((_,i)=>{ const w=vals.slice(Math.max(0,i-6),i+1).filter(v=>v!=null); return w.length? Math.round(w.reduce((a,b)=>a+b,0)/w.length*10)/10 : null; });
 }
+function otherActTss(){
+  const dur=Number(localStorage.getItem('kd_otherdur')||0);
+  const manual=Number(localStorage.getItem('kd_othertss')||0);
+  if(manual>0) return manual;
+  if(!dur) return 0;
+  const inten=localStorage.getItem('kd_otherint')||'moderate';
+  const perHr = inten==='easy'?25: inten==='hard'?70:45;
+  return Math.round(dur/60*perHr);
+}
 function computePMC(){
   let ctl=0,atl=0, out=[];
+  const xtra=otherActTss();
   for(let i=0;i<D.length;i++){
-    const tss=tssDay(D[i]); const tsb=ctl-atl;
+    let tss=tssDay(D[i]); if(i===D.length-1) tss+=xtra;
+    const tsb=ctl-atl;
     ctl += (tss-ctl)/42; atl += (tss-atl)/7;
     out.push({ctl:Math.round(ctl*10)/10, atl:Math.round(atl*10)/10, tsb:Math.round(tsb*10)/10, tss:Math.round(tss)});
   }
@@ -335,6 +362,8 @@ function render(){
   const offP=localStorage.getItem('kd_offplan')==='1', offPn=localStorage.getItem('kd_offplannote')||'';
   if(offP){ const e=document.createElement('div'); e.className='note-line'; e.style.background='#fff7ed'; e.style.color='#9a3412'; e.textContent='🚩 Off-plan today'+(offPn?': '+offPn:''); notes.appendChild(e); }
   if(ci.illness){ const e=document.createElement('div'); e.className='note-line'; e.style.background='#fef2f2'; e.style.color='#991b1b'; e.textContent='🤒 Illness symptoms reported — recovery priority, no hard training.'; notes.appendChild(e); }
+  const oAct=localStorage.getItem('kd_otheract')||'', oDur=localStorage.getItem('kd_otherdur')||'', oTss=otherActTss();
+  if(oAct&&oDur){ const e=document.createElement('div'); e.className='note-line'; e.textContent='🥾 Other activity: '+oAct+' · '+oDur+' min'+(oTss?' (~'+oTss+' TSS — counted in fitness/fatigue)':''); notes.appendChild(e); }
 
   // vitals (Withings: weight, blood pressure, steps)
   function lastNN(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
@@ -399,17 +428,42 @@ function render(){
   // macro
   const today=new Date().toISOString().slice(0,10).replace(/-/g,''); const tomo=new Date(Date.now()+864e5).toISOString().slice(0,10).replace(/-/g,'');
   let nw=TP.find(e=>e.date===today||e.date===tomo)||TP[0]||null;
-  const mb=document.getElementById('macro-body'); const lb=(withWeight!=null?withWeight:Number(localStorage.getItem('kd_weight')||0));
-  if(!lb){ mb.textContent='Enter your weight above (or connect Withings) to see the fuel plan.'; }
-  else {
-    const kg=lb/2.205; const [tn,cg]= nw? tier(nw.summary):['Rest day',3];
-    const carbs=Math.round(kg*cg), protein=Math.round(kg*1.8), fat=Math.round(kg*1.0), cals=carbs*4+protein*4+fat*9;
+  const mb=document.getElementById('macro-body');
+  const lb=(withWeight!=null?withWeight:Number(localStorage.getItem('kd_weight')||0));
+  {
+    const [tn,cg]= nw? tier(nw.summary):['Rest day',3];
+    const mode=(localStorage.getItem('kd_dietmode')||'fatloss');
+    const defDur = tn==='Rest day'?0: tn==='Race'?240: tn==='Long / endurance'?180: tn==='Hard / intensity'?90: tn==='Easy / skills'?60:90;
+    let durMin = localStorage.getItem('kd_ride_dur');
+    durMin = (durMin===null||durMin==='') ? defDur : Number(durMin);
+    const fd=document.getElementById('fuel-dur'); if(fd && document.activeElement!==fd) fd.value=durMin;
+    const Dh=durMin/60;
+    function interp(x,pts){ if(x<=pts[0][0]) return pts[0][1]; for(let i=1;i<pts.length;i++){ if(x<=pts[i][0]){ const [x0,y0]=pts[i-1],[x1,y1]=pts[i]; return y0+(y1-y0)*(x-x0)/(x1-x0);} } return pts[pts.length-1][1]; }
+    let pre,post,later,during,protein,fatAdd,meals;
+    if(Dh<=0){
+      pre=0; post=0; during=0; meals=5;
+      later=(mode==='fatloss'?25:40)*5;
+      protein=25*5; fatAdd=(mode==='fatloss'?21:35);
+    } else {
+      pre=Math.round(interp(Dh,[[1,75],[2,90],[3,100],[4,100]]));
+      post=pre; meals=6;
+      during=Math.round(interp(Dh,[[0.5,10],[1,20],[2,150],[3,300],[4,400]]));
+      later=Math.round(interp(Dh,[[1,80],[2,90],[3,110],[4,140]]));
+      protein=25*6; fatAdd=(mode==='fatloss'?14:35);
+    }
+    const healthy=pre+later+post;
+    const cals=Math.round(protein*4+(healthy+during)*4+fatAdd*9+150);
     const when= nw? (nw.date===today?'Today: ':nw.date===tomo?'Tomorrow: ':''):'';
-    const tips={'Hard / intensity':'Top off carbs before; 60–90g carbs/hr on the bike. Protein within 30 min after.','Race':'Race fuel: 80–100g carbs/hr, pre-load the night before.','Long / endurance':'Steady 60–80g carbs/hr on long rides. Refuel within the hour after.','Easy / skills':'Lighter day — carbs around the ride. Keep protein steady.','Moderate':'Moderate carbs around the session. Protein across the day.','Rest day':'Lower carbs, keep protein high for recovery.'};
-    mb.innerHTML='<div class="mhead"><b>'+when+(nw?nw.summary:'No planned workout')+'</b> · '+tn+'</div><div class="mg">'+
-      '<div class="mb"><span>Calories</span><b>'+cals.toLocaleString()+'</b></div><div class="mb"><span>Carbs</span><b>'+carbs+'g</b></div>'+
-      '<div class="mb"><span>Protein</span><b>'+protein+'g</b></div><div class="mb"><span>Fat</span><b>'+fat+'g</b></div></div>'+
-      '<div class="mhead" style="margin-top:10px">'+(tips[tn]||'')+'</div>';
+    const perHr = Dh>0? Math.round(during/Dh) : 0;
+    const rideLine = Dh>0
+      ? '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 12px;margin-top:10px;font-size:.83rem">&#128692; <b>At ride time ('+durMin+' min):</b> '+during+'g workout carbs &#8776; '+(during*4)+' kcal &#183; ~'+perHr+'g/hr &#8212; sports drink/gels, sip every 15&#8211;20 min. Pre-ride meal ~2h before: '+pre+'g carbs + 25g protein + '+(mode==='fatloss'?'7g fat':'7g fat')+'. Post-ride immediately: '+post+'g carbs + 25g protein.</div>'
+      : '<div style="background:#f8fafc;border-radius:8px;padding:9px 12px;margin-top:10px;font-size:.83rem">Rest day &#8212; '+meals+' meals, '+(mode==='fatloss'?'25':'40')+'g carbs each, protein high, easy 15&#8211;20 min walk suggested.</div>';
+    mb.innerHTML='<div class="mhead"><b>'+when+(nw?nw.summary:'No planned workout')+'</b> · '+tn+' · '+(mode==='fatloss'?'Fat loss':'Maintenance')+' template</div><div class="mg">'+
+      '<div class="mb"><span>Calories</span><b>'+cals.toLocaleString()+'</b></div>'+
+      '<div class="mb"><span>Healthy Carbs</span><b>'+healthy+'g</b></div>'+
+      '<div class="mb"><span>Workout Carbs</span><b>'+during+'g</b></div>'+
+      '<div class="mb"><span>Protein</span><b>'+protein+'g</b></div></div>'+
+      '<div style="font-size:.72rem;color:#94a3b8;margin-top:6px">'+meals+' meals · 25g protein + 2 cups veggies each · added fat '+fatAdd+'g · casein at bedtime</div>'+rideLine;
   }
 
   // guidance
@@ -447,6 +501,7 @@ function render(){
     bpWhen: bpWhen||null,
     targetWeight: localStorage.getItem('kd_targetweight')||null,
     extraWorkouts: localStorage.getItem('kd_extra_workouts')||'',
+    otherActivities: (function(){ const a=localStorage.getItem('kd_otheract')||'', d=localStorage.getItem('kd_otherdur')||''; if(!a||!d) return ''; const t=otherActTss(); return a+' '+d+'min '+(localStorage.getItem('kd_otherint')||'')+(t?' (~'+t+' TSS)':''); })(),
     fatPct: (wRow&&wRow.fat!=null)?wRow.fat:null,
     fatMass: (wRow&&wRow.fatMass!=null)?wRow.fatMass:null,
     muscle: (wRow&&wRow.muscle!=null)?wRow.muscle:null,
@@ -560,6 +615,10 @@ function syncFields(){
   ['note','coach','weight'].forEach(id=>{ document.getElementById('inp-'+id).value=localStorage.getItem('kd_'+id)||''; });
   ['energy','soreness','fatigue','sleepq','motivation'].forEach(k=>{ document.getElementById('ci-'+k).value=localStorage.getItem('kd_'+k)||''; });
   document.getElementById('inp-illness').checked = localStorage.getItem('kd_illness')==='1';
+  document.getElementById('inp-otheract').value = localStorage.getItem('kd_otheract')||'';
+  document.getElementById('inp-otherdur').value = localStorage.getItem('kd_otherdur')||'';
+  document.getElementById('inp-otherint').value = localStorage.getItem('kd_otherint')||'';
+  document.getElementById('inp-othertss').value = localStorage.getItem('kd_othertss')||'';
   document.getElementById('inp-offplan').checked = localStorage.getItem('kd_offplan')==='1';
   document.getElementById('inp-offplannote').value = localStorage.getItem('kd_offplannote')||'';
   ['morning','pre','post','night'].forEach(k=>{ document.getElementById('supp-'+k).value=localStorage.getItem('kd_supp_'+k)||''; });
@@ -586,12 +645,14 @@ async function saveState(){
 }
 
 // controls
+document.getElementById('fuel-dur').addEventListener('input',function(){ localStorage.setItem('kd_ride_dur', this.value); render(); saveState(); });
 document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); saveState(); });
 document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); saveState(); }});
 document.getElementById('inp-save').addEventListener('click',function(){
   ['note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
   ['energy','soreness','fatigue','sleepq','motivation'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('ci-'+k).value));
   localStorage.setItem('kd_illness', document.getElementById('inp-illness').checked?'1':'0');
+  ['otheract','otherdur','otherint','othertss'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
   localStorage.setItem('kd_offplan', document.getElementById('inp-offplan').checked?'1':'0');
   localStorage.setItem('kd_offplannote', document.getElementById('inp-offplannote').value);
   render(); saveState(); const s=document.getElementById('inp-status'); s.textContent='Saved & synced'; setTimeout(()=>s.textContent='',2500);
