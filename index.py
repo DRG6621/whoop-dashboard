@@ -9,6 +9,14 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+# Athlete's local timezone — day buckets use this so "today" matches Keith's day,
+# not UTC (which was making WHOOP look a day behind in the evening).
+try:
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo(os.environ.get("APP_TIMEZONE", "America/New_York"))
+except Exception:
+    ET = timezone.utc
+
 def _env(k, d=""):
     return (os.environ.get(k, d) or "").strip()
 
@@ -115,7 +123,7 @@ def fetch_whoop(token):
             continue
         sc = rec.get("score", {})
         slp = smap.get(rec["cycle_id"])
-        date = datetime.fromisoformat(rec["created_at"].replace("Z", "+00:00")).strftime("%Y-%m-%d")
+        date = datetime.fromisoformat(rec["created_at"].replace("Z", "+00:00")).astimezone(ET).strftime("%Y-%m-%d")
         hrs = None
         if slp and slp.get("score_state") == "SCORED":
             ss = slp["score"].get("stage_summary", {})
@@ -186,7 +194,7 @@ def fetch_tp():
             elif ln.startswith("DESCRIPTION"):
                 dd = ln.split(":", 1)[-1].strip()
                 cur["desc"] = dd.replace("\\n", " ").replace("\\,", ",")[:160]
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = datetime.now(ET).strftime("%Y%m%d")
     out = [e for e in sorted(events, key=lambda x: x.get("date", ""))
            if e.get("date", "") >= today and e.get("summary")]
     return out[:12]
@@ -309,7 +317,7 @@ def build_payload():
             withings = fetch_withings(wa)
     except Exception:
         withings = {}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ET)
     days = []
     for i in range(DAYS - 1, -1, -1):
         d = now - timedelta(days=i)
@@ -327,7 +335,7 @@ def build_payload():
             "systolic": wi.get("systolic"), "diastolic": wi.get("diastolic"),
             "bp_hr": wi.get("bp_hr"), "bp_ts": wi.get("bp_ts"),
         })
-    return {"generated": now.strftime("%B %d, %Y %H:%M UTC"), "days": days, "tp": tp,
+    return {"generated": now.strftime("%B %d, %Y %I:%M %p ET").lstrip("0"), "days": days, "tp": tp,
             "withings": withings_configured() and bool(kv_get("withings_refresh") or _env("WITHINGS_REFRESH_TOKEN"))}
 
 def get_payload(fresh):
@@ -415,6 +423,18 @@ def _ctx_text(ctx):
             ctx.get("bpSys"), ctx.get("bpDia"),
             (" HR %s" % ctx.get("bpHr")) if ctx.get("bpHr") else "",
             (" measured %s" % ctx.get("bpWhen")) if ctx.get("bpWhen") else ""))
+    ci = []
+    for lbl, key in (("energy", "energy"), ("soreness", "soreness"), ("fatigue", "fatigue"), ("sleep quality", "sleepQuality"), ("motivation", "motivation")):
+        v = ctx.get(key)
+        if v:
+            ci.append("%s %s/5" % (lbl, v))
+    if ci:
+        L.append("Today's check-in: " + ", ".join(ci))
+    if ctx.get("illness"):
+        L.append("*** ILLNESS SYMPTOMS reported today -- prioritize recovery, no hard training. ***")
+    bw = (ctx.get("bloodwork") or "").strip()
+    if bw:
+        L.append("Recent bloodwork (%s): %s" % (ctx.get("bloodworkDate") or "recent", bw.replace("\n", "; ")))
     s = ctx.get("supplements") or {}
     if isinstance(s, dict):
         sparts = []

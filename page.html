@@ -45,6 +45,8 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 #inputs-card label{display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px}
 #inputs-card select,#inputs-card input{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;margin-bottom:8px;background:#fff;color:#1e293b}
 .inputs-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#checkin-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:4px}
+@media(max-width:600px){#checkin-grid{grid-template-columns:repeat(2,1fr)}}
 #inp-save{width:auto;background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:2px}
 #inp-status{font-size:.75rem;color:#16a34a;margin-left:8px}
 #supp-card label{display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px}
@@ -109,20 +111,25 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 <div id="vitals-card"></div>
 
 <div class="card" id="inputs-card">
-  <h2>Daily Inputs <span style="font-weight:400">(saved on this device)</span></h2>
-  <div class="inputs-row">
+  <h2>Daily Check-in <span style="font-weight:400">(synced across your devices)</span></h2>
+  <div id="checkin-grid">
+    <div><label>&#9889; Energy</label><select id="ci-energy"><option value="">&#8212;</option><option value="1">1 Drained</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Energized</option></select></div>
+    <div><label>&#129346; Soreness</label><select id="ci-soreness"><option value="">&#8212;</option><option value="1">1 None</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Very sore</option></select></div>
+    <div><label>&#128564; Fatigue</label><select id="ci-fatigue"><option value="">&#8212;</option><option value="1">1 Fresh</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Exhausted</option></select></div>
+    <div><label>&#128564; Sleep</label><select id="ci-sleepq"><option value="">&#8212;</option><option value="1">1 Terrible</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Great</option></select></div>
+    <div><label>&#128293; Motivation</label><select id="ci-motivation"><option value="">&#8212;</option><option value="1">1 None</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Fired up</option></select></div>
+  </div>
+  <div class="inputs-row" style="margin-top:12px">
     <div>
-      <label for="inp-feel">How do you feel today?</label>
-      <select id="inp-feel"><option value="">No input</option><option value="8">Fresh &#8212; ready to go</option>
-      <option value="0">Normal</option><option value="-10">Tired &#8212; heavy legs</option><option value="-25">Wrecked &#8212; run down</option></select>
-      <label for="inp-note">Your note</label><input id="inp-note" placeholder="e.g. slept badly, legs sore">
+      <label for="inp-note">Pain / injury or note to coach</label><input id="inp-note" placeholder="e.g. left knee tender; slept badly">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;color:#334155;cursor:pointer;margin:6px 0 0"><input type="checkbox" id="inp-illness" style="width:auto;margin:0;flex:none"> &#129298; Illness symptoms today</label>
     </div>
     <div>
       <label for="inp-coach">Coach's input</label><input id="inp-coach" placeholder="e.g. Race Saturday &#8212; keep this week easy">
-      <label for="inp-weight">Your weight (lb)</label><input id="inp-weight" type="number" placeholder="e.g. 165">
+      <label for="inp-weight">Weight (lb) <span style="font-weight:400;color:#94a3b8">&#8212; auto from Withings</span></label><input id="inp-weight" type="number" placeholder="e.g. 165">
     </div>
   </div>
-  <div style="margin-top:4px;padding-top:12px;border-top:1px solid #f1f5f9">
+  <div style="margin-top:10px;padding-top:12px;border-top:1px solid #f1f5f9">
     <label style="display:flex;align-items:center;gap:8px;font-weight:600;color:#334155;cursor:pointer;margin-bottom:0">
       <input type="checkbox" id="inp-offplan" style="width:auto;margin:0;flex:none"> &#128681; Going off-plan today (not the scheduled workout)
     </label>
@@ -140,6 +147,16 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
     <div><label>&#127769; Night</label><textarea id="supp-night" rows="3" placeholder="e.g. Magnesium 300mg&#10;Zinc"></textarea></div>
   </div>
   <button id="supp-save">Save supplements</button><span id="supp-status"></span>
+</div>
+
+<div class="card" id="blood-card">
+  <h2>Bloodwork / Labs <span style="font-weight:400">(most recent panel &#8212; your coach sees these)</span></h2>
+  <label for="blood-date" style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Date drawn</label>
+  <input id="blood-date" type="date" style="width:auto;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b;margin-bottom:10px">
+  <label for="blood-results" style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Results (one per line &#8212; e.g. "Total Cholesterol 180 mg/dL")</label>
+  <textarea id="blood-results" rows="6" placeholder="Total Cholesterol 180 mg/dL&#10;LDL 95 mg/dL&#10;HDL 55 mg/dL&#10;Triglycerides 90 mg/dL&#10;Glucose (fasting) 88 mg/dL&#10;HbA1c 5.2%&#10;Vitamin D 45 ng/mL&#10;Ferritin 80 ng/mL&#10;Testosterone 650 ng/dL" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.82rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5"></textarea>
+  <div><button id="blood-save" style="background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:10px">Save labs</button><span id="blood-status" style="font-size:.75rem;color:#16a34a;margin-left:8px"></span></div>
+  <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Your coach can discuss trends and training/nutrition context, but does not diagnose or replace your doctor.</div>
 </div>
 
 <div id="tp-card"></div>
@@ -212,13 +229,19 @@ function render(){
   const avgHrv = avg(D.map(d=>d.hrv)), avgSlp=avg(D.map(d=>d.sleep));
   const tRec=last.recovery, tHrv=last.hrv, tRhr=last.rhr, hasW = tRec!=null;
 
-  // readiness
+  // readiness — WHOOP+Strava base, adjusted by the daily check-in
   const sf = w7effort<200?10:w7effort<350?28:w7effort<500?55:w7effort<650?72:88;
   let baseReadiness=null;
   if(hasW){ baseReadiness = Math.round(tRec*0.6 + (100-sf)*0.4); if(tHrv&&avgHrv&&tHrv<avgHrv*0.9) baseReadiness=Math.round(baseReadiness*0.88); }
-  const feel = localStorage.getItem('kd_feel')||'';
+  const ci={ energy:+(localStorage.getItem('kd_energy')||0), soreness:+(localStorage.getItem('kd_soreness')||0), fatigue:+(localStorage.getItem('kd_fatigue')||0), sleepq:+(localStorage.getItem('kd_sleepq')||0), motivation:+(localStorage.getItem('kd_motivation')||0), illness:localStorage.getItem('kd_illness')==='1' };
+  let ciAdj=0;
+  if(ci.energy) ciAdj+=(ci.energy-3)*4;
+  if(ci.motivation) ciAdj+=(ci.motivation-3)*2;
+  if(ci.soreness) ciAdj-=(ci.soreness-3)*4;
+  if(ci.fatigue) ciAdj-=(ci.fatigue-3)*5;
+  if(ci.sleepq) ciAdj+=(ci.sleepq-3)*2;
   let readiness = baseReadiness;
-  if(baseReadiness!=null && feel!=='') readiness = Math.max(0,Math.min(100, Math.round(baseReadiness + Number(feel))));
+  if(baseReadiness!=null){ readiness=Math.round(baseReadiness+ciAdj); if(ci.illness) readiness=Math.min(readiness,25); readiness=Math.max(0,Math.min(100,readiness)); }
 
   // rec card
   const rc = document.querySelector('.rec');
@@ -232,7 +255,7 @@ function render(){
     rc.style.background=z[0]; rc.style.borderColor=z[1];
     document.getElementById('rec-icon').textContent=z[2];
     document.getElementById('rec-title').textContent=z[4];
-    let body=z[5]; if(feel!=='') body+=' (Base '+baseReadiness+'% from WHOOP+Strava, adjusted for how you feel.)';
+    let body=z[5]; if(ciAdj!==0||ci.illness) body+=' (Base '+baseReadiness+'% from WHOOP+Strava, adjusted for your check-in'+(ci.illness?' — illness flagged':'')+'.)';
     document.getElementById('rec-body').textContent=body;
     document.getElementById('rd-pct').textContent=readiness+'%';
     document.getElementById('rd-fill').style.width=readiness+'%';
@@ -249,6 +272,7 @@ function render(){
   if(note){ const e=document.createElement('div'); e.className='note-line'; e.textContent='📝 You: '+note; notes.appendChild(e); }
   const offP=localStorage.getItem('kd_offplan')==='1', offPn=localStorage.getItem('kd_offplannote')||'';
   if(offP){ const e=document.createElement('div'); e.className='note-line'; e.style.background='#fff7ed'; e.style.color='#9a3412'; e.textContent='🚩 Off-plan today'+(offPn?': '+offPn:''); notes.appendChild(e); }
+  if(ci.illness){ const e=document.createElement('div'); e.className='note-line'; e.style.background='#fef2f2'; e.style.color='#991b1b'; e.textContent='🤒 Illness symptoms reported — recovery priority, no hard training.'; notes.appendChild(e); }
 
   // vitals (Withings: weight, blood pressure, steps)
   function lastNN(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
@@ -356,6 +380,10 @@ function render(){
     bpWhen: bpWhen||null,
     coachNote: coach||'',
     yourNote: note||'',
+    energy: ci.energy||null, soreness: ci.soreness||null, fatigue: ci.fatigue||null,
+    sleepQuality: ci.sleepq||null, motivation: ci.motivation||null, illness: ci.illness, painNotes: note||'',
+    bloodwork: localStorage.getItem('kd_bloodwork')||'',
+    bloodworkDate: localStorage.getItem('kd_bloodwork_date')||'',
     offPlan: localStorage.getItem('kd_offplan')==='1',
     offPlanNote: localStorage.getItem('kd_offplannote')||'',
     supplements: {
@@ -407,10 +435,14 @@ function drawCharts(pmc){
 function syncFields(){
   FTP=Number(localStorage.getItem('kd_ftp')||300);
   RANGE=Number(localStorage.getItem('kd_range')||30);
-  ['inp-feel','inp-note','inp-coach','inp-weight'].forEach(id=>{ const el=document.getElementById(id); const k='kd_'+id.split('-')[1]; el.value=localStorage.getItem(k)||''; });
+  ['note','coach','weight'].forEach(id=>{ document.getElementById('inp-'+id).value=localStorage.getItem('kd_'+id)||''; });
+  ['energy','soreness','fatigue','sleepq','motivation'].forEach(k=>{ document.getElementById('ci-'+k).value=localStorage.getItem('kd_'+k)||''; });
+  document.getElementById('inp-illness').checked = localStorage.getItem('kd_illness')==='1';
   document.getElementById('inp-offplan').checked = localStorage.getItem('kd_offplan')==='1';
   document.getElementById('inp-offplannote').value = localStorage.getItem('kd_offplannote')||'';
   ['morning','pre','post','night'].forEach(k=>{ document.getElementById('supp-'+k).value=localStorage.getItem('kd_supp_'+k)||''; });
+  document.getElementById('blood-date').value = localStorage.getItem('kd_bloodwork_date')||'';
+  document.getElementById('blood-results').value = localStorage.getItem('kd_bloodwork')||'';
 }
 async function loadState(){
   try{ const r=await fetch('/state'); const j=await r.json();
@@ -427,7 +459,9 @@ async function saveState(){
 document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); saveState(); });
 document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); saveState(); }});
 document.getElementById('inp-save').addEventListener('click',function(){
-  ['feel','note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
+  ['note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
+  ['energy','soreness','fatigue','sleepq','motivation'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('ci-'+k).value));
+  localStorage.setItem('kd_illness', document.getElementById('inp-illness').checked?'1':'0');
   localStorage.setItem('kd_offplan', document.getElementById('inp-offplan').checked?'1':'0');
   localStorage.setItem('kd_offplannote', document.getElementById('inp-offplannote').value);
   render(); saveState(); const s=document.getElementById('inp-status'); s.textContent='Saved & synced'; setTimeout(()=>s.textContent='',2500);
@@ -436,6 +470,11 @@ document.getElementById('inp-save').addEventListener('click',function(){
 document.getElementById('supp-save').addEventListener('click',function(){
   ['morning','pre','post','night'].forEach(k=>localStorage.setItem('kd_supp_'+k, document.getElementById('supp-'+k).value));
   render(); saveState(); const s=document.getElementById('supp-status'); s.textContent='Saved & synced — your coach now knows your stack'; setTimeout(()=>s.textContent='',3000);
+});
+document.getElementById('blood-save').addEventListener('click',function(){
+  localStorage.setItem('kd_bloodwork', document.getElementById('blood-results').value);
+  localStorage.setItem('kd_bloodwork_date', document.getElementById('blood-date').value);
+  saveState(); const s=document.getElementById('blood-status'); s.textContent='Saved & synced — coach has your labs'; setTimeout(()=>s.textContent='',3000);
 });
 
 // ---- AI Coach ----
