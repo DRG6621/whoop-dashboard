@@ -432,7 +432,9 @@ def _ctx_text(ctx):
         "7-day load: %s relative-effort over %sh riding" % (ctx.get("sevenDayLoad"), ctx.get("sevenDayHours")),
         "PMC - Fitness(CTL) %s, Fatigue(ATL) %s, Form(TSB) %s, ramp %s CTL/wk" % (
             ctx.get("ctl"), ctx.get("atl"), ctx.get("tsb"), ctx.get("rampPerWeek")),
-        "FTP %sW, body weight %s lb" % (ctx.get("ftp"), ctx.get("weightLb")),
+        "FTP %sW, body weight %s lb%s" % (
+            ctx.get("ftp"), ctx.get("weightLb"),
+            (" (target weight %s lb)" % ctx.get("targetWeight")) if ctx.get("targetWeight") else ""),
     ]
     if ctx.get("stepsToday") is not None:
         L.append("Steps today: %s (7-day avg %s)" % (ctx.get("stepsToday"), ctx.get("steps7avg")))
@@ -486,7 +488,7 @@ def _ctx_text(ctx):
             ("%s %s" % (u.get("date", ""), u.get("summary", ""))).strip() for u in up[:5] if isinstance(u, dict)))
     return "\n".join(str(x) for x in L)
 
-def anthropic_call(system, messages, max_tokens=700):
+def anthropic_call(system, messages, max_tokens=700, timeout=45):
     key = _env("ANTHROPIC_API_KEY")
     if not key:
         return None, ("AI coaching isn't set up yet. Add an ANTHROPIC_API_KEY in this project's "
@@ -497,7 +499,7 @@ def anthropic_call(system, messages, max_tokens=700):
             "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json",
         }, data=json.dumps({
             "model": model, "max_tokens": max_tokens, "system": system, "messages": messages,
-        }), timeout=45)
+        }), timeout=timeout)
     except Exception as e:
         return None, "Coach request failed: " + str(e)[:120]
     if r.status_code != 200:
@@ -554,6 +556,77 @@ def handle_coach(environ):
     text, err = anthropic_call(CHAT_SYSTEM + "\n\nCurrent athlete data:\n" + ctxt, messages, 700)
     if err:
         return {"error": err}
+    return {"text": text}
+
+# ---- Nutrition Consultant (built from Keith's coach-written diet plans) ----
+DIET_KNOWLEDGE = """KEITH'S DIET SYSTEM (from his coach's Fat Loss & Maintenance plans - follow this structure exactly):
+Every meal: 25g protein from lean sources + 2 cups veggies. Bedtime: 25g casein protein in water + 7g fat.
+Carbs scale with ride duration. Meal templates (training day, eat ~2h before riding):
+- PRE-RIDE meal: 7g fat + carbs: 75g (1hr ride), 90g (2hr), 100g (3-4hr).
+- DURING ride (workout carbs: sports drink/gels): 20g (1hr), 150g (2hr), 300g (3hr), 400g (4hr).
+- IMMEDIATELY POST-RIDE: protein + veggies + carbs matching pre-ride (75-100g). Never skip or delay.
+- Later meals: 40-70g carbs each (higher after longer rides), 3-4h apart.
+FAT LOSS mode: fat only at pre-ride + bedtime; later meals lean; REST DAY = 5 meals, 25g carbs each, fat at meals 1/4/bedtime; suggested 15-20 min easy walk.
+MAINTENANCE mode: 7g fat at nearly every meal; REST DAY = 5 meals, 40g carbs each.
+Food lists - Protein: chicken/turkey breast, tuna, salmon/fish, lean beef/steak, shrimp, ground turkey, egg whites, fat-free Greek yogurt/cottage cheese, tofu, skim milk.
+Veggies: broccoli, spinach, lettuce, onions, tomatoes, peppers, asparagus, zucchini, cauliflower, celery, cucumbers.
+Fats: nuts (cashews, almonds, walnuts, pistachios), nut butters, avocado, olive/canola/flaxseed oil.
+Carbs: rice, oatmeal (steel cut), sweet potatoes, quinoa, beans/lentils, whole grain bread/pasta/wraps, corn, fruit.
+Workout carbs: Gatorade/Powerade, fruit juice, coconut water, Vitargo-type products.
+Rules: wait 1h+ after eating before training; sip workout carbs during the ride; eat post-ride meal immediately."""
+
+MEALPLAN_SYSTEM = (
+    "You are Keith's nutrition consultant, building his week from HIS coach's actual diet system (provided below). "
+    "Goal: hit his target weight WITHOUT losing cycling power - never under-fuel training days; create any deficit "
+    "on rest/easy days, keep protein high, always fuel the work and the recovery. "
+    "Using his upcoming TrainingPeaks week, map each day to the right meal template by ride duration "
+    "(rest-day template on days with no ride). Output EXACTLY this structure in markdown:\n"
+    "**WEEK AT A GLANCE** - one line per day: day, workout, template used, ~carb total.\n"
+    "**DAILY PLANS** - for each day: each meal with time, what to eat as a concrete sample meal with amounts "
+    "(e.g. '6oz grilled chicken, 2 cups broccoli, 1.5 cups cooked rice'), matching the template's protein/veggie/fat/carb targets.\n"
+    "**3 RECIPES** - three simple recipes for the week using the plan's foods, with ingredients + steps (5-8 steps max).\n"
+    "**MEAL PREP** - a short Sunday/midweek prep strategy (batch cooking, portions).\n"
+    "**SHOPPING LIST** - consolidated by category (protein/produce/carbs/fats/workout fuel) with rough quantities for the week.\n"
+    "Be concrete and practical. No medical advice; note he should confirm weight-loss pace with his coach/doctor if asked.\n\n"
+    + DIET_KNOWLEDGE
+)
+
+def handle_meal_plan(environ):
+    try:
+        n = int(environ.get("CONTENT_LENGTH") or 0)
+    except Exception:
+        n = 0
+    raw = environ["wsgi.input"].read(n) if n > 0 else b""
+    try:
+        req = json.loads((raw or b"{}").decode("utf-8"))
+    except Exception:
+        req = {}
+    ctx = req.get("context") or {}
+    mode = "fat loss" if (req.get("mode") or "") == "fatloss" else "maintenance"
+    tw = req.get("targetWeight")
+    up = ctx.get("upcoming") or []
+    week = "; ".join(("%s %s" % (u.get("date", ""), u.get("summary", ""))).strip()
+                     for u in up[:7] if isinstance(u, dict)) or "no planned workouts found"
+    user = (
+        "Mode: %s. Current weight: %s lb (body fat %s%%, muscle %s lb). Target weight: %s lb. FTP %sW.\n"
+        "Upcoming TrainingPeaks week: %s\n"
+        "Build my week now." % (
+            mode, ctx.get("weightLb"), ctx.get("fatPct"), ctx.get("muscle"),
+            tw or "not set", ctx.get("ftp"), week)
+    )
+    h = hashlib.sha256((mode + str(tw) + week + str(ctx.get("weightLb"))).encode("utf-8")).hexdigest()[:16]
+    ck = "meal_plan:" + h
+    if not req.get("force"):
+        c = kv_get(ck)
+        if c:
+            return {"text": c, "cached": True}
+    text, err = anthropic_call(MEALPLAN_SYSTEM, [{"role": "user", "content": user}], 4000, timeout=150)
+    if err:
+        return {"error": err}
+    try:
+        kv_set(ck, text)
+    except Exception:
+        pass
     return {"text": text}
 
 LABS_PROMPT = (
@@ -614,6 +687,18 @@ def app(environ, start_response):
             out = handle_coach(environ)
         except Exception as e:
             out = {"error": "Coach failed: " + str(e)[:140]}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
+    if method == "POST" and path.rstrip("/").endswith("meal-plan"):
+        try:
+            out = handle_meal_plan(environ)
+        except Exception as e:
+            out = {"error": "Meal plan failed: " + str(e)[:140]}
         body = json.dumps(out).encode("utf-8")
         start_response("200 OK", [
             ("Content-Type", "application/json; charset=utf-8"),

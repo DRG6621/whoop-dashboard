@@ -177,6 +177,23 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 <div id="tp-card"></div>
 <div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(next session)</span></h2><div id="macro-body">Enter your weight above to see the fuel plan.</div></div>
 
+<div class="card" id="nutri-card">
+  <h2>&#129367; Nutrition Consultant <span style="font-weight:400">(your coach's diet system &middot; built around your training week)</span></h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <div><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Target weight (lb)</label>
+      <input id="nutri-target" type="number" placeholder="e.g. 172" style="width:110px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b"></div>
+    <div><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Mode</label>
+      <select id="nutri-mode" style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b">
+        <option value="fatloss">Fat loss (protect power)</option>
+        <option value="maintenance">Maintenance</option>
+      </select></div>
+    <button class="tb-btn" id="nutri-build" style="padding:9px 16px">Build my week</button>
+    <span id="nutri-status" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+  <div id="nutri-plan" style="font-size:.85rem;line-height:1.6;color:#334155"></div>
+  <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Built from your coach's meal templates + this week's TrainingPeaks plan + your Withings weight. Nutrition guidance, not medical advice.</div>
+</div>
+
 <div class="stats" id="stats"></div>
 
 <div class="card"><h2>Training Load vs. WHOOP Recovery <span style="font-weight:400">(Strava bars &middot; WHOOP line)</span></h2><div class="ch-tall"><canvas id="dual"></canvas></div></div>
@@ -398,6 +415,7 @@ function render(){
     bpDia: bpRow?bpRow.diastolic:null,
     bpHr: bpRow?bpRow.bp_hr:null,
     bpWhen: bpWhen||null,
+    targetWeight: localStorage.getItem('kd_targetweight')||null,
     fatPct: (wRow&&wRow.fat!=null)?wRow.fat:null,
     fatMass: (wRow&&wRow.fatMass!=null)?wRow.fatMass:null,
     muscle: (wRow&&wRow.muscle!=null)?wRow.muscle:null,
@@ -495,6 +513,10 @@ function syncFields(){
   ['morning','pre','post','night'].forEach(k=>{ document.getElementById('supp-'+k).value=localStorage.getItem('kd_supp_'+k)||''; });
   document.getElementById('blood-date').value = localStorage.getItem('kd_bloodwork_date')||'';
   document.getElementById('blood-results').value = localStorage.getItem('kd_bloodwork')||'';
+  document.getElementById('nutri-target').value = localStorage.getItem('kd_targetweight')||'';
+  document.getElementById('nutri-mode').value = localStorage.getItem('kd_dietmode')||'fatloss';
+  const savedPlan=localStorage.getItem('kd_meal_plan')||'';
+  if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
 }
 async function loadState(){
   try{ const r=await fetch('/state'); const j=await r.json();
@@ -542,6 +564,33 @@ document.getElementById('blood-save').addEventListener('click',function(){
   }
   render(); saveState(); const s=document.getElementById('blood-status'); s.textContent='Saved & synced — coach has your labs'; setTimeout(()=>s.textContent='',3000);
 });
+// Nutrition Consultant — build the week from the coach's diet system + TP plan
+document.getElementById('nutri-build').addEventListener('click', async function(){
+  const st=document.getElementById('nutri-status'), out=document.getElementById('nutri-plan');
+  localStorage.setItem('kd_targetweight', document.getElementById('nutri-target').value);
+  localStorage.setItem('kd_dietmode', document.getElementById('nutri-mode').value);
+  saveState();
+  st.textContent='Building your week (can take a minute)…';
+  this.disabled=true;
+  try{
+    const r=await fetch('/meal-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      mode: document.getElementById('nutri-mode').value,
+      targetWeight: document.getElementById('nutri-target').value||null,
+      context: CTX
+    })});
+    const j=await r.json();
+    if(j.error){ st.textContent=j.error; }
+    else{
+      out.innerHTML=mdLite(j.text);
+      localStorage.setItem('kd_meal_plan', j.text);
+      localStorage.setItem('kd_meal_plan_t', new Date().toISOString());
+      saveState();
+      st.textContent=j.cached?'Plan ready (cached — same inputs as last time)':'Plan ready — synced to all your devices';
+    }
+  }catch(e){ st.textContent='Could not build the plan right now — try again.'; }
+  this.disabled=false;
+});
+
 // lab PDF → AI extraction
 function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
 async function onLabPdf(file){
