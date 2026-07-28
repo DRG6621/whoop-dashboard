@@ -403,25 +403,39 @@ function drawCharts(pmc){
   }
 }
 
+// ---- cross-device sync via server KV (/state) ----
+function syncFields(){
+  FTP=Number(localStorage.getItem('kd_ftp')||300);
+  RANGE=Number(localStorage.getItem('kd_range')||30);
+  ['inp-feel','inp-note','inp-coach','inp-weight'].forEach(id=>{ const el=document.getElementById(id); const k='kd_'+id.split('-')[1]; el.value=localStorage.getItem(k)||''; });
+  document.getElementById('inp-offplan').checked = localStorage.getItem('kd_offplan')==='1';
+  document.getElementById('inp-offplannote').value = localStorage.getItem('kd_offplannote')||'';
+  ['morning','pre','post','night'].forEach(k=>{ document.getElementById('supp-'+k).value=localStorage.getItem('kd_supp_'+k)||''; });
+}
+async function loadState(){
+  try{ const r=await fetch('/state'); const j=await r.json();
+    if(j&&typeof j==='object'){ for(const k in j){ if(k.indexOf('kd_')===0&&typeof j[k]==='string') localStorage.setItem(k,j[k]); } }
+  }catch(e){}
+}
+async function saveState(){
+  try{ const st={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k.indexOf('kd_')===0) st[k]=localStorage.getItem(k); }
+    await fetch('/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(st)});
+  }catch(e){}
+}
+
 // controls
-document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); });
-document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); }});
-['inp-feel','inp-note','inp-coach','inp-weight'].forEach(id=>{ const el=document.getElementById(id); const k='kd_'+id.split('-')[1]; el.value=localStorage.getItem(k)||''; });
-document.getElementById('inp-offplan').checked = localStorage.getItem('kd_offplan')==='1';
-document.getElementById('inp-offplannote').value = localStorage.getItem('kd_offplannote')||'';
+document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); saveState(); });
+document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); saveState(); }});
 document.getElementById('inp-save').addEventListener('click',function(){
   ['feel','note','coach','weight'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
   localStorage.setItem('kd_offplan', document.getElementById('inp-offplan').checked?'1':'0');
   localStorage.setItem('kd_offplannote', document.getElementById('inp-offplannote').value);
-  render(); const s=document.getElementById('inp-status'); s.textContent='Saved'; setTimeout(()=>s.textContent='',2500);
+  render(); saveState(); const s=document.getElementById('inp-status'); s.textContent='Saved & synced'; setTimeout(()=>s.textContent='',2500);
   loadDaily(true);  // inputs changed → refresh coaching
 });
-
-// supplements
-['morning','pre','post','night'].forEach(k=>{ document.getElementById('supp-'+k).value=localStorage.getItem('kd_supp_'+k)||''; });
 document.getElementById('supp-save').addEventListener('click',function(){
   ['morning','pre','post','night'].forEach(k=>localStorage.setItem('kd_supp_'+k, document.getElementById('supp-'+k).value));
-  render(); const s=document.getElementById('supp-status'); s.textContent='Saved — your coach now knows your stack'; setTimeout(()=>s.textContent='',3000);
+  render(); saveState(); const s=document.getElementById('supp-status'); s.textContent='Saved & synced — your coach now knows your stack'; setTimeout(()=>s.textContent='',3000);
 });
 
 // ---- AI Coach ----
@@ -463,8 +477,9 @@ aiSend.onclick=sendChat;
 aiInput.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } });
 aiRegen.onclick=()=>loadDaily(true);
 
+syncFields();
 render();
-setTimeout(()=>loadDaily(false),300);
+loadState().then(()=>{ syncFields(); render(); loadDaily(false); });
 </script>
 </body>
 </html>

@@ -524,6 +524,34 @@ def app(environ, start_response):
         ])
         return [body]
 
+    # Cross-device state sync (supplements, daily inputs, off-plan, FTP) in KV.
+    if path.rstrip("/").endswith("state"):
+        if method == "POST":
+            try:
+                n = int(environ.get("CONTENT_LENGTH") or 0)
+            except Exception:
+                n = 0
+            raw = environ["wsgi.input"].read(n) if n > 0 else b""
+            try:
+                obj = json.loads((raw or b"{}").decode("utf-8"))
+                if isinstance(obj, dict):
+                    kv_set("user_state", json.dumps(obj))
+            except Exception:
+                pass
+            out = {"ok": True}
+        else:
+            try:
+                s = kv_get("user_state")
+                out = json.loads(s) if s else {}
+            except Exception:
+                out = {}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
     qs = environ.get("QUERY_STRING", "") or ""
     params = urllib.parse.parse_qs(qs)
 
