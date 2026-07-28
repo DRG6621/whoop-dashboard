@@ -436,6 +436,11 @@ def _ctx_text(ctx):
             ctx.get("ftp"), ctx.get("weightLb"),
             (" (target weight %s lb)" % ctx.get("targetWeight")) if ctx.get("targetWeight") else ""),
     ]
+    if ctx.get("eventName") or ctx.get("goalDate"):
+        L.append("LONG-TERM GOAL: %s%s%s -- all coaching and nutrition should build toward this." % (
+            ("key event '%s' on %s" % (ctx.get("eventName"), ctx.get("eventDate"))) if ctx.get("eventName") else "",
+            (" (%s days out)" % ctx.get("daysToEvent")) if ctx.get("daysToEvent") is not None else "",
+            ("; weight-goal date %s" % ctx.get("goalDate")) if ctx.get("goalDate") else ""))
     if ctx.get("stepsToday") is not None:
         L.append("Steps today: %s (7-day avg %s)" % (ctx.get("stepsToday"), ctx.get("steps7avg")))
     if ctx.get("bpSys"):
@@ -519,6 +524,16 @@ def anthropic_call(system, messages, max_tokens=700, timeout=45):
     except Exception:
         return None, "Coach parse error"
 
+NUTRI_CHAT_SYSTEM = (
+    "You are Keith's dedicated sports NUTRITIONIST (separate from his training coach). Your job: help him hit "
+    "his target weight WITHOUT losing cycling power, using HIS coach's diet system below as the source of truth. "
+    "Answer questions about meal swaps, portions, food choices, fueling timing around rides, grocery/prep, and "
+    "weight-goal pacing - always concrete with grams/amounts, preferring his own recipes. Never under-fuel "
+    "training; deficits belong on rest/easy days. You are not a doctor or dietitian - medical questions, "
+    "big calorie changes, or supplement dosing go to his doctor and coach Jeremiah Bishop. "
+    "Keep answers short and practical unless he asks for detail."
+)
+
 def handle_coach(environ):
     try:
         n = int(environ.get("CONTENT_LENGTH") or 0)
@@ -557,7 +572,14 @@ def handle_coach(environ):
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": msg})
-    text, err = anthropic_call(CHAT_SYSTEM + "\n\nCurrent athlete data:\n" + ctxt, messages, 700)
+    if req.get("type") == "nutrition":
+        sys = NUTRI_CHAT_SYSTEM + "\n\n" + DIET_KNOWLEDGE + "\n\nCurrent athlete data:\n" + ctxt
+        plan = (req.get("planExcerpt") or "").strip()
+        if plan:
+            sys += "\n\nHis current weekly meal plan (excerpt):\n" + plan[:1800]
+    else:
+        sys = CHAT_SYSTEM + "\n\nCurrent athlete data:\n" + ctxt
+    text, err = anthropic_call(sys, messages, 700)
     if err:
         return {"error": err}
     return {"text": text}
@@ -604,7 +626,11 @@ MEALPLAN_SYSTEM = (
     "**3 RECIPES** - three simple recipes for the week using the plan's foods, with ingredients + steps (5-8 steps max).\n"
     "**MEAL PREP** - a short Sunday/midweek prep strategy (batch cooking, portions).\n"
     "**SHOPPING LIST** - consolidated by category (protein/produce/carbs/fats/workout fuel) with rough quantities for the week.\n"
-    "Be concrete and practical. No medical advice; note he should confirm weight-loss pace with his coach/doctor if asked.\n\n"
+    "Be concrete and practical. No medical advice; note he should confirm weight-loss pace with his coach/doctor if asked.\n"
+    "STEERING RULE: the weight you receive is a multi-day smoothed average - day-to-day scale readings swing "
+    "with water/glycogen and mean little. Adjust the plan like steering a big ship: small, gradual changes only "
+    "(never shift daily carbs/deficit more than ~10% vs the prior week because of weight movement), and never "
+    "cut fueling on training days to chase the scale.\n\n"
     + DIET_KNOWLEDGE
 )
 
@@ -630,14 +656,21 @@ def handle_meal_plan(environ):
     other = (ctx.get("otherActivities") or "").strip()
     if other:
         week += ". Other non-bike activity (hiking/walking/strength/yard work - adds energy demand): " + other[:300]
+    goal_bits = ""
+    if ctx.get("eventName"):
+        goal_bits += " KEY EVENT: %s on %s (%s days out) - periodize nutrition toward being light AND powerful for it." % (
+            ctx.get("eventName"), ctx.get("eventDate"), ctx.get("daysToEvent"))
+    if ctx.get("goalDate"):
+        goal_bits += " Weight-goal deadline: %s - pace the deficit to land the target by then without under-fueling." % ctx.get("goalDate")
+    wt = ctx.get("smoothWeightLb") or ctx.get("weightLb")
     user = (
-        "Mode: %s. Current weight: %s lb (body fat %s%%, muscle %s lb). Target weight: %s lb. FTP %sW.\n"
+        "Mode: %s. Current weight: %s lb (7-day smoothed average; body fat %s%%, muscle %s lb). Target weight: %s lb. FTP %sW.%s\n"
         "Upcoming TrainingPeaks week: %s\n"
         "Build my week now." % (
-            mode, ctx.get("weightLb"), ctx.get("fatPct"), ctx.get("muscle"),
-            tw or "not set", ctx.get("ftp"), week)
+            mode, wt, ctx.get("fatPct"), ctx.get("muscle"),
+            tw or "not set", ctx.get("ftp"), goal_bits, week)
     )
-    h = hashlib.sha256((mode + str(tw) + week + str(ctx.get("weightLb"))).encode("utf-8")).hexdigest()[:16]
+    h = hashlib.sha256((mode + str(tw) + week + str(wt) + goal_bits).encode("utf-8")).hexdigest()[:16]
     ck = "meal_plan_v2:" + h
     if not req.get("force"):
         c = kv_get(ck)

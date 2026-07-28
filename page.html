@@ -243,8 +243,16 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
         <option value="fatloss">Fat loss (protect power)</option>
         <option value="maintenance">Maintenance</option>
       </select></div>
+    <div><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Reach goal by</label>
+      <input id="nutri-goaldate" type="date" style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b"></div>
     <button class="tb-btn" id="nutri-build" style="padding:9px 16px">Build my week</button>
     <span id="nutri-status" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <div style="flex:1;min-width:200px"><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">&#127937; Key event / race (the long-term goal)</label>
+      <input id="nutri-event" placeholder="e.g. Lost River Classic Gravel" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b"></div>
+    <div><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Event date</label>
+      <input id="nutri-eventdate" type="date" style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b"></div>
   </div>
   <div style="margin-bottom:12px">
     <label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Weekend / extra workouts not in TrainingPeaks</label>
@@ -256,7 +264,15 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
     <button class="tb-btn" id="nutri-print-shop" style="font-size:.75rem;padding:6px 12px;background:#fff;color:#1e293b;border:1px solid #e2e8f0">&#128722; Print shopping list</button>
   </div>
   <div id="nutri-plan" style="font-size:.85rem;line-height:1.6;color:#334155"></div>
-  <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Built from your coach's meal templates + this week's TrainingPeaks plan + your Withings weight. Nutrition guidance, not medical advice.</div>
+  <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:14px">
+    <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px">&#129367; Ask the Nutritionist</div>
+    <div id="nutri-msgs" style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <input id="nutri-q" placeholder="e.g. Swap the fish dinner? What do I eat before Saturday's 3hr ride?" style="flex:1;padding:9px 11px;border:1px solid #e2e8f0;border-radius:10px;font-size:.85rem;color:#1e293b;background:#fff">
+      <button class="tb-btn" id="nutri-send">Ask</button>
+    </div>
+  </div>
+  <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Built from your coach's meal templates + this week's TrainingPeaks plan + your Withings weight. Nutrition guidance, not medical advice &#8212; big changes go through Coach Bishop.</div>
 </div>
 
 <div class="stats" id="stats"></div>
@@ -463,7 +479,10 @@ function render(){
       let rate=null, src='';
       if(pts.length>=2 && (pts[pts.length-1].i-pts[0].i)>=5){
         const span=pts[pts.length-1].i-pts[0].i;
-        rate=(pts[pts.length-1].w-pts[0].w)/span*7; src='your '+span+'-day weigh-in trend';
+        // least-squares slope across ALL weigh-ins (smoothed — single readings can't yank it)
+        const n=pts.length, sx=pts.reduce((a,p)=>a+p.i,0), sy=pts.reduce((a,p)=>a+p.w,0),
+              sxy=pts.reduce((a,p)=>a+p.i*p.w,0), sxx=pts.reduce((a,p)=>a+p.i*p.i,0);
+        rate=((n*sxy - sx*sy)/(n*sxx - sx*sx))*7; src='smoothed '+span+'-day trend, all weigh-ins';
       } else {
         rate=((localStorage.getItem('kd_dietmode')||'fatloss')==='fatloss')?-0.7:0; src='plan estimate — more weigh-ins will sharpen this';
       }
@@ -475,7 +494,19 @@ function render(){
         eta=' &#183; on pace for <b>'+tw+' lb ~'+d2.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</b> ('+Math.round(wks*10)/10+' wks)';
       } else if(toGo<=0.2){ eta=' &#183; <b>at goal!</b>'; }
       else { eta=' &#183; trend is flat — the fat-loss plan creates the deficit on rest/easy days'; }
-      goal='<div style="margin-top:14px;background:linear-gradient(92deg,#eef2ff,#fdf4ff);border:1px solid #e0e7ff;border-radius:12px;padding:11px 14px;font-size:.84rem">&#127919; <b>Weight goal:</b> '+withWeight+' &#8594; '+tw+' lb ('+Math.round(toGo*10)/10+' to go) &#183; projected <b>'+(rate<0?'':'+')+Math.round(rate*100)/100+' lb/wk</b> <span style="color:#94a3b8">('+src+')</span>'+eta+'</div>';
+      // deadline: goal date, else key event date
+      let deadline='';
+      const gd=localStorage.getItem('kd_goal_date')||localStorage.getItem('kd_event_date')||'';
+      const gname=localStorage.getItem('kd_goal_date')?'goal date':((localStorage.getItem('kd_event_name')||'race'));
+      if(gd && toGo>0.2){
+        const wksLeft=(new Date(gd+'T12:00:00')-Date.now())/(7*864e5);
+        if(wksLeft>0.5){
+          const need=toGo/wksLeft;
+          const onPace = rate<0 && (-rate)>=need*0.85;
+          deadline='<div style="margin-top:6px;font-size:.8rem">&#128198; To hit <b>'+tw+' lb by '+new Date(gd+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</b> ('+gname+', '+Math.round(wksLeft*10)/10+' wks out) you need <b>−'+Math.round(need*100)/100+' lb/wk</b> — '+(onPace?'<span style="color:#16a34a;font-weight:700">on pace ✓</span>':'<span style="color:#d97706;font-weight:700">behind pace — tighten rest-day carbs or talk to Coach Bishop</span>')+'</div>';
+        }
+      }
+      goal='<div style="margin-top:14px;background:linear-gradient(92deg,#eef2ff,#fdf4ff);border:1px solid #e0e7ff;border-radius:12px;padding:11px 14px;font-size:.84rem">&#127919; <b>Weight goal:</b> '+withWeight+' &#8594; '+tw+' lb ('+Math.round(toGo*10)/10+' to go) &#183; projected <b>'+(rate<0?'':'+')+Math.round(rate*100)/100+' lb/wk</b> <span style="color:#94a3b8">('+src+')</span>'+eta+deadline+'</div>';
     }
     vc.innerHTML='<div class="card"><h2>Body &amp; Vitals <span style="font-weight:400">(Withings)</span></h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'+
       cell('Weight', withWeight!=null?withWeight+' lb':'—', wRow&&wRow.fat!=null?wRow.fat+'% fat':(wRow?wRow.label:''))+
@@ -618,6 +649,10 @@ function render(){
     bpHr: bpRow?bpRow.bp_hr:null,
     bpWhen: bpWhen||null,
     targetWeight: localStorage.getItem('kd_targetweight')||null,
+    goalDate: localStorage.getItem('kd_goal_date')||null,
+    eventName: localStorage.getItem('kd_event_name')||null,
+    eventDate: localStorage.getItem('kd_event_date')||null,
+    daysToEvent: (function(){ const ed=localStorage.getItem('kd_event_date'); if(!ed) return null; const d=Math.ceil((new Date(ed+'T12:00:00')-Date.now())/864e5); return d>0?d:null; })(),
     extraWorkouts: localStorage.getItem('kd_extra_workouts')||'',
     otherActivities: (function(){ const a=localStorage.getItem('kd_otheract')||'', d=localStorage.getItem('kd_otherdur')||''; if(!a||!d) return ''; const t=otherActTss(); return a+' '+d+'min '+(localStorage.getItem('kd_otherint')||'')+(t?' (~'+t+' TSS)':''); })(),
     fatPct: (wRow&&wRow.fat!=null)?wRow.fat:null,
@@ -626,6 +661,7 @@ function render(){
     water: (wRow&&wRow.water!=null)?wRow.water:null,
     bone: (wRow&&wRow.bone!=null)?wRow.bone:null,
     visceral: (wRow&&wRow.visceral!=null)?wRow.visceral:null,
+    smoothWeightLb: (function(){ const w=D.filter(d=>d.weight!=null).map(d=>d.weight).slice(-7); return w.length? Math.round(w.reduce((a,b)=>a+b,0)/w.length) : null; })(),
     coachNote: coach||'',
     yourNote: note||'',
     energy: ci.energy||null, soreness: ci.soreness||null, fatigue: ci.fatigue||null,
@@ -689,7 +725,7 @@ function renderHistory(){
   const cEl=document.getElementById('coach-log');
   cEl.innerHTML = cl.length ? cl.slice().reverse().slice(0,40).map(e=>{
     let when=fmt(e.t); try{ when+=' '+new Date(e.t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }catch(x){}
-    const label = e.type==='chat' ? ('Q: '+esc((e.q||'').slice(0,70))) : 'Daily coaching';
+    const label = e.type==='chat' ? ('Q: '+esc((e.q||'').slice(0,70))) : e.type==='nutrition' ? ('&#129367; Nutrition: '+esc((e.q||'').slice(0,60))) : 'Daily coaching';
     return '<details style="'+det+'"><summary style="'+sum+'">'+label+' <span style="font-weight:400;color:#94a3b8">&#183; '+when+'</span></summary><div style="font-size:.8rem;color:#334155;margin-top:8px;line-height:1.55">'+esc(e.text||'').replace(/\n/g,'<br>')+'</div></details>';
   }).join('') : '<div style="font-size:.8rem;color:#94a3b8">No coach output logged yet.</div>';
 }
@@ -745,6 +781,16 @@ function syncFields(){
   document.getElementById('nutri-target').value = localStorage.getItem('kd_targetweight')||'';
   document.getElementById('nutri-mode').value = localStorage.getItem('kd_dietmode')||'fatloss';
   document.getElementById('nutri-extra').value = localStorage.getItem('kd_extra_workouts')||'';
+  document.getElementById('nutri-goaldate').value = localStorage.getItem('kd_goal_date')||'';
+  document.getElementById('nutri-event').value = localStorage.getItem('kd_event_name')||'';
+  document.getElementById('nutri-eventdate').value = localStorage.getItem('kd_event_date')||'';
+  // hero countdown to key event
+  try{
+    const en=localStorage.getItem('kd_event_name')||'', ed=localStorage.getItem('kd_event_date')||'';
+    let k=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}).toUpperCase();
+    if(en&&ed){ const days=Math.ceil((new Date(ed+'T12:00:00')-Date.now())/864e5); if(days>0) k+='  ·  🏁 '+en.toUpperCase()+' IN '+days+' DAYS'; }
+    document.getElementById('hero-date').textContent=k;
+  }catch(e){}
   document.getElementById('report-email').value = localStorage.getItem('kd_coach_email')||'';
   const savedPlan=localStorage.getItem('kd_meal_plan')||'';
   if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); document.getElementById('nutri-actions').style.display='flex'; const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
@@ -805,7 +851,10 @@ document.getElementById('nutri-build').addEventListener('click', async function(
   localStorage.setItem('kd_targetweight', document.getElementById('nutri-target').value);
   localStorage.setItem('kd_dietmode', document.getElementById('nutri-mode').value);
   localStorage.setItem('kd_extra_workouts', document.getElementById('nutri-extra').value);
-  render();  // refresh CTX with extra workouts
+  localStorage.setItem('kd_goal_date', document.getElementById('nutri-goaldate').value);
+  localStorage.setItem('kd_event_name', document.getElementById('nutri-event').value);
+  localStorage.setItem('kd_event_date', document.getElementById('nutri-eventdate').value);
+  syncFields(); render();  // refresh hero countdown + CTX
   saveState();
   st.textContent='Building your week (can take a minute)…';
   this.disabled=true;
@@ -842,6 +891,34 @@ document.getElementById('nutri-print-shop').addEventListener('click',function(){
   const i=t.toUpperCase().indexOf('SHOPPING LIST');
   printHtml('Shopping List', mdLite(i>=0? t.slice(i-2) : t));
 });
+
+// goal + event fields persist immediately
+[['nutri-goaldate','kd_goal_date'],['nutri-event','kd_event_name'],['nutri-eventdate','kd_event_date'],['nutri-target','kd_targetweight']].forEach(function(pair){
+  document.getElementById(pair[0]).addEventListener('change',function(){ localStorage.setItem(pair[1], this.value); syncFields(); render(); saveState(); });
+});
+
+// Ask the Nutritionist — dedicated nutrition chat
+let nutriHist=[];
+function nutriMsg(role,text){
+  const b=document.createElement('div');
+  b.style.cssText='max-width:85%;padding:9px 12px;border-radius:12px;font-size:.85rem;line-height:1.5;'+(role==='user'?'align-self:flex-end;background:#166534;color:#fff':'align-self:flex-start;background:#f0fdf4;color:#14532d;border:1px solid #bbf7d0');
+  b.innerHTML=mdLite(text); document.getElementById('nutri-msgs').appendChild(b);
+  document.getElementById('nutri-msgs').scrollTop=1e6;
+}
+async function askNutritionist(){
+  const inp=document.getElementById('nutri-q'); const msg=inp.value.trim(); if(!msg) return;
+  inp.value=''; nutriMsg('user',msg);
+  const typing=document.createElement('div'); typing.style.cssText='align-self:flex-start;color:#94a3b8;font-size:.8rem'; typing.textContent='Nutritionist is thinking…';
+  document.getElementById('nutri-msgs').appendChild(typing);
+  try{
+    const j=await coachCall({type:'nutrition',message:msg,history:nutriHist.slice(-8),context:CTX,planExcerpt:(localStorage.getItem('kd_meal_plan')||'').slice(0,1800)});
+    typing.remove();
+    if(j.error){ nutriMsg('assistant','⚠️ '+j.error); }
+    else { nutriMsg('assistant',j.text); nutriHist.push({role:'user',content:msg}); nutriHist.push({role:'assistant',content:j.text}); logCoach({type:'nutrition', q:msg, text:j.text}); }
+  }catch(e){ typing.remove(); nutriMsg('assistant','⚠️ Nutritionist unavailable right now.'); }
+}
+document.getElementById('nutri-send').addEventListener('click',askNutritionist);
+document.getElementById('nutri-q').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); askNutritionist(); } });
 
 // Coach Report — generate, email, copy, print
 document.getElementById('report-gen').addEventListener('click', async function(){
