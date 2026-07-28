@@ -455,12 +455,34 @@ function render(){
       const items=[['Body Fat',wRow.fat!=null?wRow.fat+'%':null],['Fat Mass',wRow.fatMass!=null?wRow.fatMass+' lb':null],['Muscle',wRow.muscle!=null?wRow.muscle+' lb':null],['Water',wRow.water!=null?wRow.water+' lb':null],['Bone',wRow.bone!=null?wRow.bone+' lb':null],['Visceral Fat',wRow.visceral!=null?wRow.visceral:null]].filter(x=>x[1]);
       if(items.length) comp='<div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:14px 0 8px">Body composition &#183; '+(wRow.label||'')+'</div><div style="display:grid;grid-template-columns:repeat('+Math.min(items.length,4)+',1fr);gap:10px">'+items.map(x=>cell(x[0],x[1],'')).join('')+'</div>';
     }
+    // weight goal projection
+    let goal='';
+    const tw=Number(localStorage.getItem('kd_targetweight')||0);
+    if(tw&&withWeight!=null){
+      const pts=[]; D.forEach((d,i)=>{ if(d.weight!=null) pts.push({i:i,w:d.weight}); });
+      let rate=null, src='';
+      if(pts.length>=2 && (pts[pts.length-1].i-pts[0].i)>=5){
+        const span=pts[pts.length-1].i-pts[0].i;
+        rate=(pts[pts.length-1].w-pts[0].w)/span*7; src='your '+span+'-day weigh-in trend';
+      } else {
+        rate=((localStorage.getItem('kd_dietmode')||'fatloss')==='fatloss')?-0.7:0; src='plan estimate — more weigh-ins will sharpen this';
+      }
+      const toGo=withWeight-tw;
+      let eta='';
+      if(toGo>0.2 && rate<-0.05){
+        const wks=toGo/(-rate);
+        const d2=new Date(Date.now()+wks*7*864e5);
+        eta=' &#183; on pace for <b>'+tw+' lb ~'+d2.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</b> ('+Math.round(wks*10)/10+' wks)';
+      } else if(toGo<=0.2){ eta=' &#183; <b>at goal!</b>'; }
+      else { eta=' &#183; trend is flat — the fat-loss plan creates the deficit on rest/easy days'; }
+      goal='<div style="margin-top:14px;background:linear-gradient(92deg,#eef2ff,#fdf4ff);border:1px solid #e0e7ff;border-radius:12px;padding:11px 14px;font-size:.84rem">&#127919; <b>Weight goal:</b> '+withWeight+' &#8594; '+tw+' lb ('+Math.round(toGo*10)/10+' to go) &#183; projected <b>'+(rate<0?'':'+')+Math.round(rate*100)/100+' lb/wk</b> <span style="color:#94a3b8">('+src+')</span>'+eta+'</div>';
+    }
     vc.innerHTML='<div class="card"><h2>Body &amp; Vitals <span style="font-weight:400">(Withings)</span></h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'+
       cell('Weight', withWeight!=null?withWeight+' lb':'—', wRow&&wRow.fat!=null?wRow.fat+'% fat':(wRow?wRow.label:''))+
       cell('Blood Pressure', bpRow?bpRow.systolic+'/'+bpRow.diastolic:'—', bpRow?(bpWhen+(bpRow.bp_hr?' · '+bpRow.bp_hr+' bpm':'')):'mmHg')+
       cell('Steps Today', stepsToday!=null?stepsToday.toLocaleString():'—','')+
       cell('7-Day Avg Steps', steps7avg!=null?steps7avg.toLocaleString():'—','')+
-    '</div>'+comp+'</div>';
+    '</div>'+comp+goal+'</div>';
   } else {
     vc.innerHTML='<div class="card"><h2>Body &amp; Vitals</h2><div class="g-text">Connect your Withings scale, BPM Vision cuff, or watch to auto-sync weight, blood pressure, and steps. <a href="/?wauth=1" style="color:#7c3aed;font-weight:700;text-decoration:none">Connect Withings &#8594;</a></div></div>';
   }
@@ -524,8 +546,31 @@ function render(){
       later=Math.round(interp(Dh,[[1,80],[2,90],[3,110],[4,140]]));
       protein=25*6; fatAdd=(mode==='fatloss'?14:35);
     }
-    const healthy=pre+later+post;
-    const cals=Math.round(protein*4+(healthy+during)*4+fatAdd*9+150);
+    // per-meal breakout (coach template)
+    let mealRows=[];
+    if(Dh<=0){
+      const cR=(mode==='fatloss'?25:40);
+      const fatOn = mode==='fatloss'? {1:7,4:7,5:7} : {1:7,2:7,3:7,4:7,5:7};
+      const times={1:'Waking',2:'3–5h later',3:'3–5h later',4:'3–5h later',5:'Bedtime (casein)'};
+      for(let i=1;i<=5;i++) mealRows.push({m:'Meal '+i, t:times[i], p:25, c:cR, f:fatOn[i]||0});
+    } else {
+      const l1=Dh<=1?40:Dh<=2?50:Dh<=3?40:50, l2=40, bedC=Dh<=2?0:Dh<=3?30:50;
+      const mf = mode==='maintenance'?7:0;
+      mealRows=[
+        {m:'Meal 1', t:'~2h before ride', p:25, c:pre, f:7},
+        {m:'Meal 2', t:'During ride', p:0, c:during, f:0, wo:true},
+        {m:'Meal 3', t:'Right after ride', p:25, c:post, f:mf},
+        {m:'Meal 4', t:'3–4h later', p:25, c:l1, f:mf},
+        {m:'Meal 5', t:'3–5h later', p:25, c:l2, f:mf},
+        {m:'Meal 6', t:'Bedtime (casein)', p:25, c:bedC, f:7}
+      ];
+    }
+    const healthy=mealRows.filter(r=>!r.wo).reduce((a,r)=>a+r.c,0);
+    const fatTot=mealRows.reduce((a,r)=>a+r.f,0), protTot=mealRows.reduce((a,r)=>a+r.p,0);
+    const mealTable='<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:.8rem"><tr style="color:#94a3b8;text-transform:uppercase;font-size:.62rem;letter-spacing:.06em;text-align:left"><th style="padding:5px 8px">Meal</th><th style="padding:5px 8px">When</th><th style="padding:5px 8px;text-align:right">Protein</th><th style="padding:5px 8px;text-align:right">Carbs</th><th style="padding:5px 8px;text-align:right">Fat</th></tr>'+
+      mealRows.map(r=>'<tr style="border-top:1px solid #f1f5f9'+(r.wo?';background:#f0f9ff':'')+'"><td style="padding:6px 8px;font-weight:700">'+r.m+(r.wo?' &#128692;':'')+'</td><td style="padding:6px 8px;color:#64748b">'+r.t+'</td><td style="padding:6px 8px;text-align:right;font-weight:600">'+(r.p?r.p+'g':'—')+'</td><td style="padding:6px 8px;text-align:right;font-weight:600">'+(r.c?r.c+'g'+(r.wo?' <span style=\'color:#0284c7;font-size:.66rem\'>workout</span>':''):'—')+'</td><td style="padding:6px 8px;text-align:right;font-weight:600">'+(r.f?r.f+'g':'—')+'</td></tr>').join('')+
+      '<tr style="border-top:2px solid #e2e8f0;font-weight:800"><td style="padding:6px 8px">TOTAL</td><td style="padding:6px 8px;color:#94a3b8">+ 2 cups veggies each meal</td><td style="padding:6px 8px;text-align:right">'+protTot+'g</td><td style="padding:6px 8px;text-align:right">'+(healthy+during)+'g</td><td style="padding:6px 8px;text-align:right">'+fatTot+'g</td></tr></table>';
+    const cals=Math.round(protTot*4+(healthy+during)*4+fatTot*9+150);
     const when= nw? (nw.date===today?'Today: ':nw.date===tomo?'Tomorrow: ':''):'';
     const perHr = Dh>0? Math.round(during/Dh) : 0;
     const rideLine = Dh>0
@@ -535,8 +580,8 @@ function render(){
       '<div class="mb"><span>Calories</span><b>'+cals.toLocaleString()+'</b></div>'+
       '<div class="mb"><span>Healthy Carbs</span><b>'+healthy+'g</b></div>'+
       '<div class="mb"><span>Workout Carbs</span><b>'+during+'g</b></div>'+
-      '<div class="mb"><span>Protein</span><b>'+protein+'g</b></div></div>'+
-      '<div style="font-size:.72rem;color:#94a3b8;margin-top:6px">'+meals+' meals · 25g protein + 2 cups veggies each · added fat '+fatAdd+'g · casein at bedtime</div>'+rideLine;
+      '<div class="mb"><span>Protein</span><b>'+protTot+'g</b></div></div>'+
+      mealTable+rideLine;
   }
 
   // guidance
