@@ -174,6 +174,23 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
   <div id="coach-log"></div>
 </div>
 
+<div class="card" id="report-card">
+  <h2>&#128231; Coach Report <span style="font-weight:400">(status summary to send Jermian)</span></h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <div style="flex:1;min-width:220px"><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Coach's email</label>
+      <input id="report-email" type="email" placeholder="coach@example.com" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b"></div>
+    <button class="tb-btn" id="report-gen" style="padding:9px 16px">Generate report</button>
+    <span id="report-status" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+  <div id="report-actions" style="display:none;gap:8px;margin-bottom:10px">
+    <button class="tb-btn" id="report-mail" style="font-size:.75rem;padding:6px 12px">&#9993; Open in email</button>
+    <button class="tb-btn" id="report-copy" style="font-size:.75rem;padding:6px 12px;background:#fff;color:#1e293b;border:1px solid #e2e8f0">&#128203; Copy</button>
+    <button class="tb-btn" id="report-print" style="font-size:.75rem;padding:6px 12px;background:#fff;color:#1e293b;border:1px solid #e2e8f0">&#128424; Print</button>
+  </div>
+  <div id="report-out" style="font-size:.85rem;line-height:1.6;color:#334155;white-space:pre-wrap"></div>
+  <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Pulls your live numbers, check-in, nutrition mode, supplements &amp; labs into a short status update with questions for your coach.</div>
+</div>
+
 <div id="tp-card"></div>
 <div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(next session)</span></h2><div id="macro-body">Enter your weight above to see the fuel plan.</div></div>
 
@@ -189,6 +206,15 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
       </select></div>
     <button class="tb-btn" id="nutri-build" style="padding:9px 16px">Build my week</button>
     <span id="nutri-status" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+  <div style="margin-bottom:12px">
+    <label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Weekend / extra workouts not in TrainingPeaks</label>
+    <input id="nutri-extra" placeholder="e.g. Sat: 3hr gravel group ride; Sun: 90min easy Z2" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b">
+    <div style="font-size:.68rem;color:#94a3b8;margin-top:3px">These count as training days for fueling and are shown to your AI coach too.</div>
+  </div>
+  <div id="nutri-actions" style="display:none;gap:8px;margin-bottom:10px">
+    <button class="tb-btn" id="nutri-print" style="font-size:.75rem;padding:6px 12px;background:#fff;color:#1e293b;border:1px solid #e2e8f0">&#128424; Print meal plan</button>
+    <button class="tb-btn" id="nutri-print-shop" style="font-size:.75rem;padding:6px 12px;background:#fff;color:#1e293b;border:1px solid #e2e8f0">&#128722; Print shopping list</button>
   </div>
   <div id="nutri-plan" style="font-size:.85rem;line-height:1.6;color:#334155"></div>
   <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Built from your coach's meal templates + this week's TrainingPeaks plan + your Withings weight. Nutrition guidance, not medical advice.</div>
@@ -416,6 +442,7 @@ function render(){
     bpHr: bpRow?bpRow.bp_hr:null,
     bpWhen: bpWhen||null,
     targetWeight: localStorage.getItem('kd_targetweight')||null,
+    extraWorkouts: localStorage.getItem('kd_extra_workouts')||'',
     fatPct: (wRow&&wRow.fat!=null)?wRow.fat:null,
     fatMass: (wRow&&wRow.fatMass!=null)?wRow.fatMass:null,
     muscle: (wRow&&wRow.muscle!=null)?wRow.muscle:null,
@@ -515,8 +542,12 @@ function syncFields(){
   document.getElementById('blood-results').value = localStorage.getItem('kd_bloodwork')||'';
   document.getElementById('nutri-target').value = localStorage.getItem('kd_targetweight')||'';
   document.getElementById('nutri-mode').value = localStorage.getItem('kd_dietmode')||'fatloss';
+  document.getElementById('nutri-extra').value = localStorage.getItem('kd_extra_workouts')||'';
+  document.getElementById('report-email').value = localStorage.getItem('kd_coach_email')||'';
   const savedPlan=localStorage.getItem('kd_meal_plan')||'';
-  if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
+  if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); document.getElementById('nutri-actions').style.display='flex'; const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
+  const savedRep=localStorage.getItem('kd_coach_report')||'';
+  if(savedRep){ document.getElementById('report-out').textContent=savedRep; document.getElementById('report-actions').style.display='flex'; }
 }
 async function loadState(){
   try{ const r=await fetch('/state'); const j=await r.json();
@@ -569,6 +600,8 @@ document.getElementById('nutri-build').addEventListener('click', async function(
   const st=document.getElementById('nutri-status'), out=document.getElementById('nutri-plan');
   localStorage.setItem('kd_targetweight', document.getElementById('nutri-target').value);
   localStorage.setItem('kd_dietmode', document.getElementById('nutri-mode').value);
+  localStorage.setItem('kd_extra_workouts', document.getElementById('nutri-extra').value);
+  render();  // refresh CTX with extra workouts
   saveState();
   st.textContent='Building your week (can take a minute)…';
   this.disabled=true;
@@ -585,10 +618,62 @@ document.getElementById('nutri-build').addEventListener('click', async function(
       localStorage.setItem('kd_meal_plan', j.text);
       localStorage.setItem('kd_meal_plan_t', new Date().toISOString());
       saveState();
+      document.getElementById('nutri-actions').style.display='flex';
       st.textContent=j.cached?'Plan ready (cached — same inputs as last time)':'Plan ready — synced to all your devices';
     }
   }catch(e){ st.textContent='Could not build the plan right now — try again.'; }
   this.disabled=false;
+});
+function printHtml(title, bodyHtml){
+  const w=window.open('','_blank');
+  w.document.write('<html><head><title>'+title+'</title><style>body{font-family:-apple-system,Segoe UI,sans-serif;padding:28px;line-height:1.6;font-size:13.5px;max-width:760px;color:#111}h1{font-size:19px;margin-bottom:4px}b{color:#000}</style></head><body><h1>'+title+'</h1>'+bodyHtml+'</body></html>');
+  w.document.close(); w.focus(); setTimeout(()=>w.print(), 400);
+}
+document.getElementById('nutri-print').addEventListener('click',function(){
+  const t=localStorage.getItem('kd_meal_plan')||''; if(!t) return;
+  printHtml("Keith's Weekly Meal Plan", mdLite(t));
+});
+document.getElementById('nutri-print-shop').addEventListener('click',function(){
+  const t=localStorage.getItem('kd_meal_plan')||''; if(!t) return;
+  const i=t.toUpperCase().indexOf('SHOPPING LIST');
+  printHtml('Shopping List', mdLite(i>=0? t.slice(i-2) : t));
+});
+
+// Coach Report — generate, email, copy, print
+document.getElementById('report-gen').addEventListener('click', async function(){
+  const st=document.getElementById('report-status'), out=document.getElementById('report-out');
+  localStorage.setItem('kd_coach_email', document.getElementById('report-email').value);
+  saveState();
+  st.textContent='Writing your report…'; this.disabled=true;
+  try{
+    const r=await fetch('/coach-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({context:CTX})});
+    const j=await r.json();
+    if(j.error){ st.textContent=j.error; }
+    else{
+      out.textContent=j.text;
+      localStorage.setItem('kd_coach_report', j.text);
+      saveState();
+      document.getElementById('report-actions').style.display='flex';
+      st.textContent='Report ready — review it, then email/copy/print.';
+    }
+  }catch(e){ st.textContent='Could not generate the report — try again.'; }
+  this.disabled=false;
+});
+document.getElementById('report-mail').addEventListener('click',function(){
+  const t=localStorage.getItem('kd_coach_report')||''; if(!t) return;
+  const em=document.getElementById('report-email').value||'';
+  let subject='Athlete update — Keith', body=t;
+  const nl=t.indexOf('\n');
+  if(t.toUpperCase().startsWith('SUBJECT')){ subject=t.slice(t.indexOf(':')+1, nl).trim(); body=t.slice(nl+1).trim(); }
+  location.href='mailto:'+encodeURIComponent(em)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body.slice(0,1800));
+});
+document.getElementById('report-copy').addEventListener('click',function(){
+  const t=localStorage.getItem('kd_coach_report')||''; if(!t) return;
+  navigator.clipboard.writeText(t).then(()=>{ const s=document.getElementById('report-status'); s.textContent='Copied — paste into any email or text.'; setTimeout(()=>s.textContent='',2500); });
+});
+document.getElementById('report-print').addEventListener('click',function(){
+  const t=localStorage.getItem('kd_coach_report')||''; if(!t) return;
+  printHtml('Coach Report — Keith', '<div style="white-space:pre-wrap">'+t.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>');
 });
 
 // lab PDF → AI extraction

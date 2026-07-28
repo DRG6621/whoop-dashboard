@@ -481,6 +481,8 @@ def _ctx_text(ctx):
         note = ctx.get("offPlanNote") or ""
         L.append("*** OFF-PLAN FLAG: the athlete is deviating from the scheduled workout today.%s ***" % (
             (" What they're doing instead: %s." % note) if note else ""))
+    if ctx.get("extraWorkouts"):
+        L.append("Extra/weekend workouts not in TrainingPeaks: %s" % str(ctx.get("extraWorkouts"))[:300])
     L.append("Next planned workout: %s" % (ctx.get("nextWorkout") or "none scheduled"))
     up = ctx.get("upcoming") or []
     if isinstance(up, list) and up:
@@ -573,7 +575,16 @@ Veggies: broccoli, spinach, lettuce, onions, tomatoes, peppers, asparagus, zucch
 Fats: nuts (cashews, almonds, walnuts, pistachios), nut butters, avocado, olive/canola/flaxseed oil.
 Carbs: rice, oatmeal (steel cut), sweet potatoes, quinoa, beans/lentils, whole grain bread/pasta/wraps, corn, fruit.
 Workout carbs: Gatorade/Powerade, fruit juice, coconut water, Vitargo-type products.
-Rules: wait 1h+ after eating before training; sip workout carbs during the ride; eat post-ride meal immediately."""
+Rules: wait 1h+ after eating before training; sip workout carbs during the ride; eat post-ride meal immediately.
+KEITH'S OWN RECIPES (from his nutrition plan - PREFER these in daily menus, scale carbs up/down to hit the template):
+1. Overnight Berry Oats [446kcal P35 C43 F10]: oats 45g, protein powder 1 scoop, almond milk 1 cup, blueberries 120g, cinnamon, chia 1 tbsp.
+2. Grilled Turkey + Quinoa & Mixed Veg [595kcal P54 C40 F20]: turkey breast 190g, quinoa 55g dry, mixed veg 95g, avocado 50g, olive oil 1 tsp.
+3. Greek Yogurt Protein Pudding [308kcal P41 C14 F10]: protein powder 1 scoop, Greek yogurt 180g, honey 1 tsp.
+4. Pan-Seared Fish & Green Veg [506kcal P57 C47 F9]: white fish 250g, brown rice 50g dry, broccoli 90g, green beans 95g, asparagus 120g, olive oil 1 tsp.
+5. High-Protein Omelette & Veg [376kcal P36 C28 F12]: 2 eggs + 115g egg whites, spinach, mushrooms 120g, tomato, onion, 2 slices whole wheat bread.
+6. Tuna Salad Bowl [520kcal P44 C59 F11]: canned tuna, whole wheat pasta 80g dry, light mayo 2 tbsp, cucumber, tomato, lime.
+7. Grilled Steak & Sweet Potato Mash [626kcal P56 C50 F19]: sirloin 170g, sweet potato 250g, carrots 75g, red onion, olive oil 1 tsp.
+8. Protein Shake & Fruit [330kcal P53 C16 F5]: protein powder 2 scoops, almond milk 1.5 cups, watermelon 200g."""
 
 MEALPLAN_SYSTEM = (
     "You are Keith's nutrition consultant, building his week from HIS coach's actual diet system (provided below). "
@@ -607,6 +618,9 @@ def handle_meal_plan(environ):
     up = ctx.get("upcoming") or []
     week = "; ".join(("%s %s" % (u.get("date", ""), u.get("summary", ""))).strip()
                      for u in up[:7] if isinstance(u, dict)) or "no planned workouts found"
+    extra = (ctx.get("extraWorkouts") or "").strip()
+    if extra:
+        week += ". ADDITIONAL workouts not in TrainingPeaks (treat as training days, fuel accordingly): " + extra[:400]
     user = (
         "Mode: %s. Current weight: %s lb (body fat %s%%, muscle %s lb). Target weight: %s lb. FTP %sW.\n"
         "Upcoming TrainingPeaks week: %s\n"
@@ -627,6 +641,33 @@ def handle_meal_plan(environ):
         kv_set(ck, text)
     except Exception:
         pass
+    return {"text": text}
+
+REPORT_SYSTEM = (
+    "Write a concise athlete status report FROM Keith TO his cycling coach for review. Professional, "
+    "data-first, plain text (no markdown symbols except simple dashes), ready to paste into an email. "
+    "Structure: SUBJECT line; snapshot of current numbers (recovery, HRV, readiness, CTL/ATL/TSB, 7-day load, "
+    "weight/body comp, blood pressure); how training has gone recently and how he's feeling (check-in, notes, "
+    "any illness/off-plan flags); nutrition status (mode, target weight, adherence context); supplement stack; "
+    "recent bloodwork if present; and 2-4 specific questions for the coach to weigh in on. Under 350 words. "
+    "Use only the data provided - no invention. This is Keith reporting to his own coach."
+)
+
+def handle_coach_report(environ):
+    try:
+        n = int(environ.get("CONTENT_LENGTH") or 0)
+    except Exception:
+        n = 0
+    raw = environ["wsgi.input"].read(n) if n > 0 else b""
+    try:
+        req = json.loads((raw or b"{}").decode("utf-8"))
+    except Exception:
+        req = {}
+    ctxt = _ctx_text(req.get("context", {}))
+    text, err = anthropic_call(REPORT_SYSTEM, [
+        {"role": "user", "content": ctxt + "\n\nWrite my coach report now."}], 6000, timeout=120)
+    if err:
+        return {"error": err}
     return {"text": text}
 
 LABS_PROMPT = (
@@ -687,6 +728,18 @@ def app(environ, start_response):
             out = handle_coach(environ)
         except Exception as e:
             out = {"error": "Coach failed: " + str(e)[:140]}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
+    if method == "POST" and path.rstrip("/").endswith("coach-report"):
+        try:
+            out = handle_coach_report(environ)
+        except Exception as e:
+            out = {"error": "Report failed: " + str(e)[:140]}
         body = json.dumps(out).encode("utf-8")
         start_response("200 OK", [
             ("Content-Type", "application/json; charset=utf-8"),
