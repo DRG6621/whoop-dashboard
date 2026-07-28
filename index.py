@@ -388,6 +388,9 @@ CHAT_SYSTEM = (
     "You are not a doctor or dietitian: for pain, illness, or medical questions, recommend rest and a "
     "professional. If an OFF-PLAN FLAG is present, coach the deviation honestly - help him make the off-plan "
     "choice fit his readiness and flag the cost to his plan if it's a bad idea. "
+    "You may discuss general timing of common training supplements (caffeine, creatine, protein, carbs, "
+    "beta-alanine, electrolytes) relative to his sessions, but do not give medical dosing advice or treat "
+    "health conditions - defer those to a doctor or dietitian. "
     "Keep answers short (a few sentences) unless he asks for more detail."
 )
 
@@ -412,6 +415,15 @@ def _ctx_text(ctx):
             ctx.get("bpSys"), ctx.get("bpDia"),
             (" HR %s" % ctx.get("bpHr")) if ctx.get("bpHr") else "",
             (" measured %s" % ctx.get("bpWhen")) if ctx.get("bpWhen") else ""))
+    s = ctx.get("supplements") or {}
+    if isinstance(s, dict):
+        sparts = []
+        for lbl, key in (("morning", "morning"), ("pre-workout", "pre"), ("post-workout", "post"), ("night", "night")):
+            v = (s.get(key) or "").strip()
+            if v:
+                sparts.append("%s: %s" % (lbl, v.replace("\n", ", ")))
+        if sparts:
+            L.append("Supplement stack -- " + " | ".join(sparts))
     if ctx.get("coachNote"):
         L.append("Coach's note: %s" % ctx.get("coachNote"))
     if ctx.get("yourNote"):

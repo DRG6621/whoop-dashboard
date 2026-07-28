@@ -47,6 +47,12 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 .inputs-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 #inp-save{width:auto;background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:2px}
 #inp-status{font-size:.75rem;color:#16a34a;margin-left:8px}
+#supp-card label{display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px}
+#supp-card textarea{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.82rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5}
+#supp-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#supp-save{background:#1e293b;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.8rem;font-weight:600;cursor:pointer;margin-top:12px}
+#supp-status{font-size:.75rem;color:#16a34a;margin-left:8px}
+@media(max-width:600px){#supp-grid{grid-template-columns:1fr}}
 .pmc-strip{display:flex;gap:18px;font-size:.8rem;margin-bottom:12px;flex-wrap:wrap}
 .tp-item{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
 .tp-item:last-child{border-bottom:none}
@@ -123,6 +129,17 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
     <input id="inp-offplannote" placeholder="What are you doing instead? e.g. spontaneous group ride, skipping the intervals" style="margin-top:8px">
   </div>
   <button id="inp-save">Save</button><span id="inp-status"></span>
+</div>
+
+<div class="card" id="supp-card">
+  <h2>Supplements <span style="font-weight:400">(one per line &#8212; name &amp; dose, e.g. "Creatine 5g")</span></h2>
+  <div id="supp-grid">
+    <div><label>&#127749; Morning</label><textarea id="supp-morning" rows="3" placeholder="e.g. Creatine 5g&#10;Vitamin D 2000IU"></textarea></div>
+    <div><label>&#9889; Pre-workout</label><textarea id="supp-pre" rows="3" placeholder="e.g. Caffeine 200mg&#10;Beta-alanine 3g"></textarea></div>
+    <div><label>&#128170; Post-workout</label><textarea id="supp-post" rows="3" placeholder="e.g. Whey protein 30g&#10;Electrolytes"></textarea></div>
+    <div><label>&#127769; Night</label><textarea id="supp-night" rows="3" placeholder="e.g. Magnesium 300mg&#10;Zinc"></textarea></div>
+  </div>
+  <button id="supp-save">Save supplements</button><span id="supp-status"></span>
 </div>
 
 <div id="tp-card"></div>
@@ -341,6 +358,12 @@ function render(){
     yourNote: note||'',
     offPlan: localStorage.getItem('kd_offplan')==='1',
     offPlanNote: localStorage.getItem('kd_offplannote')||'',
+    supplements: {
+      morning: localStorage.getItem('kd_supp_morning')||'',
+      pre: localStorage.getItem('kd_supp_pre')||'',
+      post: localStorage.getItem('kd_supp_post')||'',
+      night: localStorage.getItem('kd_supp_night')||''
+    },
     nextWorkout: nw?nw.summary:(TP[0]?TP[0].summary:null),
     upcoming: TP.slice(0,5).map(e=>({date:e.date,summary:e.summary}))
   };
@@ -392,6 +415,13 @@ document.getElementById('inp-save').addEventListener('click',function(){
   localStorage.setItem('kd_offplannote', document.getElementById('inp-offplannote').value);
   render(); const s=document.getElementById('inp-status'); s.textContent='Saved'; setTimeout(()=>s.textContent='',2500);
   loadDaily(true);  // inputs changed → refresh coaching
+});
+
+// supplements
+['morning','pre','post','night'].forEach(k=>{ document.getElementById('supp-'+k).value=localStorage.getItem('kd_supp_'+k)||''; });
+document.getElementById('supp-save').addEventListener('click',function(){
+  ['morning','pre','post','night'].forEach(k=>localStorage.setItem('kd_supp_'+k, document.getElementById('supp-'+k).value));
+  render(); const s=document.getElementById('supp-status'); s.textContent='Saved — your coach now knows your stack'; setTimeout(()=>s.textContent='',3000);
 });
 
 // ---- AI Coach ----
