@@ -34,7 +34,11 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 .stat-val{font-size:1.4rem;font-weight:700;margin:4px 0 2px}
 .stat-sub{font-size:.68rem;color:#94a3b8}
 .card{background:white;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:14px}
-.card h2{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:14px}
+.card h2{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:14px;cursor:pointer;user-select:none}
+.card > h2::after{content:' \25BE';color:#cbd5e1}
+.card.collapsed > h2::after{content:' \25B8';color:#cbd5e1}
+.card.collapsed > h2{margin-bottom:0}
+.card.collapsed > *:not(h2){display:none !important}
 .ch-tall{height:210px}.ch-sm{height:155px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px}
@@ -175,7 +179,7 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 </div>
 
 <div class="card" id="report-card">
-  <h2>&#128231; Coach Report <span style="font-weight:400">(status summary to send Jermian)</span></h2>
+  <h2>&#128231; Coach Report <span style="font-weight:400">(status summary to send Jeremiah Bishop)</span></h2>
   <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
     <div style="flex:1;min-width:220px"><label style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Coach's email</label>
       <input id="report-email" type="email" placeholder="coach@example.com" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b"></div>
@@ -469,7 +473,28 @@ function render(){
 
   renderHistory();
   drawCharts(pmc);
+  applyCollapse();
 }
+
+// collapsible panels — click any card title to expand/collapse (state remembered per device)
+const DEFAULT_COLLAPSED=['supp-card','blood-card','history-card','report-card','nutri-card'];
+function applyCollapse(){
+  document.querySelectorAll('.card').forEach(function(c,i){
+    const cid = c.id || (c.parentElement&&c.parentElement.id) || ('idx'+i);
+    c.dataset.cid=cid;
+    const stored=localStorage.getItem('kdui_col_'+cid);
+    const col = stored==null ? DEFAULT_COLLAPSED.indexOf(cid)>=0 : stored==='1';
+    c.classList.toggle('collapsed', col);
+  });
+}
+document.addEventListener('click', function(e){
+  const h=e.target.closest('.card > h2'); if(!h) return;
+  const c=h.parentElement, cid=c.dataset.cid||c.id||'';
+  const col=!c.classList.contains('collapsed');
+  c.classList.toggle('collapsed', col);
+  if(cid) localStorage.setItem('kdui_col_'+cid, col?'1':'0');
+  if(!col) window.dispatchEvent(new Event('resize'));  // let charts re-size on expand
+});
 
 function renderHistory(){
   const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
