@@ -164,6 +164,16 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
   <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">Your coach can discuss trends and training/nutrition context, but does not diagnose or replace your doctor.</div>
 </div>
 
+<div class="card" id="history-card">
+  <h2>History <span style="font-weight:400">(past lab panels &amp; supplement changes)</span></h2>
+  <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#129656; Lab panels</div>
+  <div id="labs-history" style="margin-bottom:16px"></div>
+  <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#128138; Supplement changes</div>
+  <div id="supp-history" style="margin-bottom:16px"></div>
+  <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#129302; Coach log</div>
+  <div id="coach-log"></div>
+</div>
+
 <div id="tp-card"></div>
 <div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(next session)</span></h2><div id="macro-body">Enter your weight above to see the fuel plan.</div></div>
 
@@ -401,7 +411,33 @@ function render(){
     upcoming: TP.slice(0,5).map(e=>({date:e.date,summary:e.summary}))
   };
 
+  renderHistory();
   drawCharts(pmc);
+}
+
+function renderHistory(){
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmt=iso=>{ try{ return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return iso; } };
+  let lh=[]; try{ lh=JSON.parse(localStorage.getItem('kd_labs_history')||'[]'); }catch(e){}
+  let sh=[]; try{ sh=JSON.parse(localStorage.getItem('kd_supp_history')||'[]'); }catch(e){}
+  const det='border:1px solid #f1f5f9;border-radius:8px;padding:9px 12px;margin-bottom:6px';
+  const sum='cursor:pointer;font-size:.85rem;font-weight:600;color:#1e293b';
+  const lEl=document.getElementById('labs-history');
+  lEl.innerHTML = lh.length ? lh.slice().reverse().map(e=>
+    '<details style="'+det+'"><summary style="'+sum+'">'+(e.drawn?esc(e.drawn):'Panel')+' <span style="font-weight:400;color:#94a3b8">&#183; saved '+fmt(e.t)+'</span></summary><pre style="white-space:pre-wrap;font-family:inherit;font-size:.8rem;color:#334155;margin:8px 0 0">'+esc(e.results)+'</pre></details>'
+  ).join('') : '<div style="font-size:.8rem;color:#94a3b8">No saved lab panels yet.</div>';
+  const sEl=document.getElementById('supp-history');
+  sEl.innerHTML = sh.length ? sh.slice().reverse().map(e=>{
+    const blocks=[['Morning',e.morning],['Pre',e.pre],['Post',e.post],['Night',e.night]].filter(b=>b[1]&&b[1].trim()).map(b=>'<b>'+b[0]+':</b> '+esc(b[1]).replace(/\n/g,', ')).join('<br>');
+    return '<details style="'+det+'"><summary style="'+sum+'">Stack &#183; '+fmt(e.t)+'</summary><div style="font-size:.8rem;color:#334155;margin-top:8px;line-height:1.6">'+(blocks||'(empty)')+'</div></details>';
+  }).join('') : '<div style="font-size:.8rem;color:#94a3b8">No supplement changes recorded yet.</div>';
+  let cl=[]; try{ cl=JSON.parse(localStorage.getItem('kd_coach_log')||'[]'); }catch(e){}
+  const cEl=document.getElementById('coach-log');
+  cEl.innerHTML = cl.length ? cl.slice().reverse().slice(0,40).map(e=>{
+    let when=fmt(e.t); try{ when+=' '+new Date(e.t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }catch(x){}
+    const label = e.type==='chat' ? ('Q: '+esc((e.q||'').slice(0,70))) : 'Daily coaching';
+    return '<details style="'+det+'"><summary style="'+sum+'">'+label+' <span style="font-weight:400;color:#94a3b8">&#183; '+when+'</span></summary><div style="font-size:.8rem;color:#334155;margin-top:8px;line-height:1.55">'+esc(e.text||'').replace(/\n/g,'<br>')+'</div></details>';
+  }).join('') : '<div style="font-size:.8rem;color:#94a3b8">No coach output logged yet.</div>';
 }
 
 function drawCharts(pmc){
@@ -473,13 +509,27 @@ document.getElementById('inp-save').addEventListener('click',function(){
   loadDaily(true);  // inputs changed → refresh coaching
 });
 document.getElementById('supp-save').addEventListener('click',function(){
-  ['morning','pre','post','night'].forEach(k=>localStorage.setItem('kd_supp_'+k, document.getElementById('supp-'+k).value));
+  const vals={}; ['morning','pre','post','night'].forEach(k=>{ vals[k]=document.getElementById('supp-'+k).value; localStorage.setItem('kd_supp_'+k, vals[k]); });
+  let h=[]; try{ h=JSON.parse(localStorage.getItem('kd_supp_history')||'[]'); }catch(e){}
+  const last=h.length?h[h.length-1]:null;
+  const changed=!last || ['morning','pre','post','night'].some(k=>(last[k]||'')!==(vals[k]||''));
+  const anyVal=['morning','pre','post','night'].some(k=>vals[k]&&vals[k].trim());
+  if(changed && anyVal){ h.push({t:new Date().toISOString(), morning:vals.morning, pre:vals.pre, post:vals.post, night:vals.night}); if(h.length>40) h=h.slice(-40); localStorage.setItem('kd_supp_history', JSON.stringify(h)); }
   render(); saveState(); const s=document.getElementById('supp-status'); s.textContent='Saved & synced — your coach now knows your stack'; setTimeout(()=>s.textContent='',3000);
 });
 document.getElementById('blood-save').addEventListener('click',function(){
-  localStorage.setItem('kd_bloodwork', document.getElementById('blood-results').value);
-  localStorage.setItem('kd_bloodwork_date', document.getElementById('blood-date').value);
-  saveState(); const s=document.getElementById('blood-status'); s.textContent='Saved & synced — coach has your labs'; setTimeout(()=>s.textContent='',3000);
+  const results=document.getElementById('blood-results').value, drawn=document.getElementById('blood-date').value;
+  localStorage.setItem('kd_bloodwork', results);
+  localStorage.setItem('kd_bloodwork_date', drawn);
+  if(results.trim()){
+    let h=[]; try{ h=JSON.parse(localStorage.getItem('kd_labs_history')||'[]'); }catch(e){}
+    const last=h.length?h[h.length-1]:null;
+    if(!last || (last.results||'').trim()!==results.trim() || (last.drawn||'')!==drawn){
+      h.push({t:new Date().toISOString(), drawn:drawn, results:results}); if(h.length>40) h=h.slice(-40);
+      localStorage.setItem('kd_labs_history', JSON.stringify(h));
+    }
+  }
+  render(); saveState(); const s=document.getElementById('blood-status'); s.textContent='Saved & synced — coach has your labs'; setTimeout(()=>s.textContent='',3000);
 });
 // lab PDF → AI extraction
 function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
@@ -520,13 +570,21 @@ async function coachCall(payload){
   const r=await fetch('/coach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   return r.json();
 }
+function logCoach(entry){
+  let l=[]; try{ l=JSON.parse(localStorage.getItem('kd_coach_log')||'[]'); }catch(e){}
+  l.push(Object.assign({t:new Date().toISOString()}, entry));
+  if(l.length>60) l=l.slice(-60);
+  localStorage.setItem('kd_coach_log', JSON.stringify(l));
+  saveState();
+  try{ renderHistory(); }catch(e){}
+}
 async function loadDaily(force){
   aiCached.textContent='';
   aiDaily.innerHTML='<span style="color:#94a3b8">Thinking about today&#8230;</span>';
   try{
     const j=await coachCall({type:'daily',force:!!force,context:CTX});
     if(j.error){ aiDaily.innerHTML='<span style="color:#b45309">'+mdLite(j.error)+'</span>'; }
-    else { aiDaily.innerHTML=mdLite(j.text); aiRegen.style.display='inline-block'; if(j.cached) aiCached.textContent='cached'; }
+    else { aiDaily.innerHTML=mdLite(j.text); aiRegen.style.display='inline-block'; if(j.cached){ aiCached.textContent='cached'; } else { logCoach({type:'daily', text:j.text}); } }
   }catch(e){ aiDaily.innerHTML='<span style="color:#b45309">Coach unavailable right now.</span>'; }
 }
 function addMsg(role,text){
@@ -542,7 +600,7 @@ async function sendChat(){
     const j=await coachCall({type:'chat',message:msg,history:chatHist.slice(-8),context:CTX});
     typing.remove();
     if(j.error){ addMsg('assistant','⚠️ '+j.error); }
-    else { addMsg('assistant',j.text); chatHist.push({role:'user',content:msg}); chatHist.push({role:'assistant',content:j.text}); }
+    else { addMsg('assistant',j.text); chatHist.push({role:'user',content:msg}); chatHist.push({role:'assistant',content:j.text}); logCoach({type:'chat', q:msg, text:j.text}); }
   }catch(e){ typing.remove(); addMsg('assistant','⚠️ Coach unavailable right now.'); }
 }
 aiSend.onclick=sendChat;
