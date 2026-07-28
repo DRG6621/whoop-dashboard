@@ -301,12 +301,17 @@ function render(){
   const vc=document.getElementById('vitals-card');
   if(withWeight!=null||bpRow||stepsToday!=null){
     const cell=(l,v,s)=>'<div style="background:#f8fafc;border-radius:8px;padding:11px 12px;text-align:center"><span style="font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8">'+l+'</span><b style="display:block;font-size:1.2rem;margin-top:3px">'+v+'</b>'+(s?'<div style="font-size:.62rem;color:#94a3b8;margin-top:2px">'+s+'</div>':'')+'</div>';
+    let comp='';
+    if(withWeight!=null && wRow){
+      const items=[['Body Fat',wRow.fat!=null?wRow.fat+'%':null],['Fat Mass',wRow.fatMass!=null?wRow.fatMass+' lb':null],['Muscle',wRow.muscle!=null?wRow.muscle+' lb':null],['Water',wRow.water!=null?wRow.water+' lb':null],['Bone',wRow.bone!=null?wRow.bone+' lb':null],['Visceral Fat',wRow.visceral!=null?wRow.visceral:null]].filter(x=>x[1]);
+      if(items.length) comp='<div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:14px 0 8px">Body composition &#183; '+(wRow.label||'')+'</div><div style="display:grid;grid-template-columns:repeat('+Math.min(items.length,4)+',1fr);gap:10px">'+items.map(x=>cell(x[0],x[1],'')).join('')+'</div>';
+    }
     vc.innerHTML='<div class="card"><h2>Body &amp; Vitals <span style="font-weight:400">(Withings)</span></h2><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">'+
       cell('Weight', withWeight!=null?withWeight+' lb':'—', wRow&&wRow.fat!=null?wRow.fat+'% fat':(wRow?wRow.label:''))+
       cell('Blood Pressure', bpRow?bpRow.systolic+'/'+bpRow.diastolic:'—', bpRow?(bpWhen+(bpRow.bp_hr?' · '+bpRow.bp_hr+' bpm':'')):'mmHg')+
       cell('Steps Today', stepsToday!=null?stepsToday.toLocaleString():'—','')+
       cell('7-Day Avg Steps', steps7avg!=null?steps7avg.toLocaleString():'—','')+
-    '</div></div>';
+    '</div>'+comp+'</div>';
   } else {
     vc.innerHTML='<div class="card"><h2>Body &amp; Vitals</h2><div class="g-text">Connect your Withings scale, BPM Vision cuff, or watch to auto-sync weight, blood pressure, and steps. <a href="/?wauth=1" style="color:#7c3aed;font-weight:700;text-decoration:none">Connect Withings &#8594;</a></div></div>';
   }
@@ -393,6 +398,12 @@ function render(){
     bpDia: bpRow?bpRow.diastolic:null,
     bpHr: bpRow?bpRow.bp_hr:null,
     bpWhen: bpWhen||null,
+    fatPct: (wRow&&wRow.fat!=null)?wRow.fat:null,
+    fatMass: (wRow&&wRow.fatMass!=null)?wRow.fatMass:null,
+    muscle: (wRow&&wRow.muscle!=null)?wRow.muscle:null,
+    water: (wRow&&wRow.water!=null)?wRow.water:null,
+    bone: (wRow&&wRow.bone!=null)?wRow.bone:null,
+    visceral: (wRow&&wRow.visceral!=null)?wRow.visceral:null,
     coachNote: coach||'',
     yourNote: note||'',
     energy: ci.energy||null, soreness: ci.soreness||null, fatigue: ci.fatigue||null,

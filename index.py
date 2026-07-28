@@ -262,23 +262,39 @@ def fetch_withings(access_token):
     hdr = {"Authorization": "Bearer " + access_token}
     start = int((datetime.now(timezone.utc) - timedelta(days=DAYS)).timestamp())
     end = int(datetime.now(timezone.utc).timestamp())
-    # measures: weight(1), fat ratio(6), diastolic(9), systolic(10), hr(11)
+    # measures: weight(1), lean/fat-free(5), fat%(6), fat mass(8), diastolic(9),
+    # systolic(10), hr(11), muscle(76), hydration/water(77), bone(88), PWV(91), visceral(170)
+    LB = 2.2046226
     try:
         r = requests.post(WITHINGS_MEASURE, headers=hdr, data={
-            "action": "getmeas", "meastypes": "1,6,9,10,11", "category": "1",
+            "action": "getmeas", "meastypes": "1,5,6,8,9,10,11,76,77,88,91,170", "category": "1",
             "startdate": start, "enddate": end,
         }, timeout=30)
         for g in r.json().get("body", {}).get("measuregrps", []):
             ts = g.get("date", 0)
-            dkey = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
+            dkey = datetime.fromtimestamp(ts, ET).strftime("%Y-%m-%d")
             rec = out.setdefault(dkey, {})
             for m in g.get("measures", []):
                 val = m["value"] * (10 ** m["unit"])
                 t = m["type"]
                 if t == 1:
-                    rec["weight"] = round(val * 2.2046226, 1)  # kg -> lb
+                    rec["weight"] = round(val * LB, 1)
+                elif t == 5:
+                    rec["leanMass"] = round(val * LB, 1)
                 elif t == 6:
                     rec["fat"] = round(val, 1)
+                elif t == 8:
+                    rec["fatMass"] = round(val * LB, 1)
+                elif t == 76:
+                    rec["muscle"] = round(val * LB, 1)
+                elif t == 77:
+                    rec["water"] = round(val * LB, 1)
+                elif t == 88:
+                    rec["bone"] = round(val * LB, 1)
+                elif t == 91:
+                    rec["pwv"] = round(val, 1)
+                elif t == 170:
+                    rec["visceral"] = round(val, 1)
                 elif t == 10:
                     rec["systolic"] = round(val); rec["bp_ts"] = ts
                 elif t == 9:
@@ -332,6 +348,8 @@ def build_payload():
             "effort": s.get("effort", 0), "kj": s.get("kj", 0),
             "secs": s.get("secs", 0), "rides": s.get("rides", []),
             "weight": wi.get("weight"), "fat": wi.get("fat"), "steps": wi.get("steps"),
+            "leanMass": wi.get("leanMass"), "fatMass": wi.get("fatMass"), "muscle": wi.get("muscle"),
+            "water": wi.get("water"), "bone": wi.get("bone"), "pwv": wi.get("pwv"), "visceral": wi.get("visceral"),
             "systolic": wi.get("systolic"), "diastolic": wi.get("diastolic"),
             "bp_hr": wi.get("bp_hr"), "bp_ts": wi.get("bp_ts"),
         })
@@ -423,6 +441,15 @@ def _ctx_text(ctx):
             ctx.get("bpSys"), ctx.get("bpDia"),
             (" HR %s" % ctx.get("bpHr")) if ctx.get("bpHr") else "",
             (" measured %s" % ctx.get("bpWhen")) if ctx.get("bpWhen") else ""))
+    bc = []
+    for lbl, key, unit in (("body fat", "fatPct", "%"), ("fat mass", "fatMass", " lb"),
+                           ("muscle", "muscle", " lb"), ("water", "water", " lb"),
+                           ("bone", "bone", " lb"), ("visceral fat", "visceral", "")):
+        v = ctx.get(key)
+        if v is not None and v != "":
+            bc.append("%s %s%s" % (lbl, v, unit))
+    if bc:
+        L.append("Body composition (Withings scale): " + ", ".join(bc))
     ci = []
     for lbl, key in (("energy", "energy"), ("soreness", "soreness"), ("fatigue", "fatigue"), ("sleep quality", "sleepQuality"), ("motivation", "motivation")):
         v = ctx.get(key)
