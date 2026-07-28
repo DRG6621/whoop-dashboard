@@ -615,12 +615,12 @@ def handle_meal_plan(environ):
             tw or "not set", ctx.get("ftp"), week)
     )
     h = hashlib.sha256((mode + str(tw) + week + str(ctx.get("weightLb"))).encode("utf-8")).hexdigest()[:16]
-    ck = "meal_plan:" + h
+    ck = "meal_plan_v2:" + h
     if not req.get("force"):
         c = kv_get(ck)
         if c:
             return {"text": c, "cached": True}
-    text, err = anthropic_call(MEALPLAN_SYSTEM, [{"role": "user", "content": user}], 4000, timeout=150)
+    text, err = anthropic_call(MEALPLAN_SYSTEM, [{"role": "user", "content": user}], 12000, timeout=240)
     if err:
         return {"error": err}
     try:
