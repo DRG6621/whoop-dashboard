@@ -529,6 +529,56 @@ def handle_coach(environ):
         return {"error": err}
     return {"text": text}
 
+LABS_PROMPT = (
+    "This is a blood/lab test report. Extract EVERY lab result. Output one result per line as "
+    "'Test Name Value Unit' (for example: 'LDL 95 mg/dL'). If you can find the collection/draw date, "
+    "put it on the very first line as 'DATE: YYYY-MM-DD'. Output nothing else — no reference ranges, "
+    "no commentary, no headers. Just the optional DATE line then the results, one per line."
+)
+
+def handle_parse_labs(environ):
+    try:
+        n = int(environ.get("CONTENT_LENGTH") or 0)
+    except Exception:
+        n = 0
+    raw = environ["wsgi.input"].read(n) if n > 0 else b""
+    try:
+        req = json.loads((raw or b"{}").decode("utf-8"))
+    except Exception:
+        req = {}
+    b64 = req.get("pdf") or ""
+    if not b64:
+        return {"error": "No PDF received."}
+    key = _env("ANTHROPIC_API_KEY")
+    if not key:
+        return {"error": "AI isn't configured (add ANTHROPIC_API_KEY)."}
+    body = {
+        "model": _env("AI_MODEL") or "claude-sonnet-5",
+        "max_tokens": 1600,
+        "messages": [{"role": "user", "content": [
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}},
+            {"type": "text", "text": LABS_PROMPT},
+        ]}],
+    }
+    try:
+        r = requests.post(AI_ENDPOINT, headers={
+            "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json",
+        }, data=json.dumps(body), timeout=60)
+    except Exception as e:
+        return {"error": "Reading the PDF failed: " + str(e)[:120]}
+    if r.status_code != 200:
+        try:
+            em = r.json().get("error", {}).get("message", "")
+        except Exception:
+            em = r.text[:160]
+        return {"error": "Lab reader error (%s): %s" % (r.status_code, em[:170])}
+    try:
+        parts = r.json().get("content", [])
+        txt = "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
+        return {"text": txt or "(nothing found)"}
+    except Exception:
+        return {"error": "Could not parse the lab reader response."}
+
 def app(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET").upper()
     path = environ.get("PATH_INFO", "") or ""
@@ -537,6 +587,18 @@ def app(environ, start_response):
             out = handle_coach(environ)
         except Exception as e:
             out = {"error": "Coach failed: " + str(e)[:140]}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
+    if method == "POST" and path.rstrip("/").endswith("parse-labs"):
+        try:
+            out = handle_parse_labs(environ)
+        except Exception as e:
+            out = {"error": "Lab parse failed: " + str(e)[:140]}
         body = json.dumps(out).encode("utf-8")
         start_response("200 OK", [
             ("Content-Type", "application/json; charset=utf-8"),

@@ -151,6 +151,11 @@ h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
 
 <div class="card" id="blood-card">
   <h2>Bloodwork / Labs <span style="font-weight:400">(most recent panel &#8212; your coach sees these)</span></h2>
+  <div id="blood-drop" style="border:1.5px dashed #cbd5e1;border-radius:10px;padding:16px;text-align:center;margin-bottom:14px;cursor:pointer;color:#64748b;font-size:.85rem;background:#fafafa">
+    &#128196; Drop a lab report <b>PDF</b> here, or <span style="color:#7c3aed;font-weight:700">choose a file</span>
+    <div style="font-size:.72rem;color:#94a3b8;margin-top:4px">Claude reads it and fills the results below for you to review.</div>
+    <input type="file" id="blood-pdf" accept="application/pdf" style="display:none">
+  </div>
   <label for="blood-date" style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Date drawn</label>
   <input id="blood-date" type="date" style="width:auto;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b;margin-bottom:10px">
   <label for="blood-results" style="display:block;font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">Results (one per line &#8212; e.g. "Total Cholesterol 180 mg/dL")</label>
@@ -476,6 +481,34 @@ document.getElementById('blood-save').addEventListener('click',function(){
   localStorage.setItem('kd_bloodwork_date', document.getElementById('blood-date').value);
   saveState(); const s=document.getElementById('blood-status'); s.textContent='Saved & synced — coach has your labs'; setTimeout(()=>s.textContent='',3000);
 });
+// lab PDF → AI extraction
+function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
+async function onLabPdf(file){
+  const s=document.getElementById('blood-status');
+  if(!file) return;
+  if(file.type!=='application/pdf'){ s.textContent='Please choose a PDF file.'; return; }
+  if(file.size>3*1024*1024){ s.textContent='PDF too large (max ~3MB) — try a smaller export.'; return; }
+  s.textContent='Reading your labs with AI…';
+  try{
+    const b64=await fileToB64(file);
+    const r=await fetch('/parse-labs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pdf:b64})});
+    const j=await r.json();
+    if(j.error){ s.textContent=j.error; return; }
+    let text=(j.text||'').trim();
+    const m=text.match(/DATE:\s*(\d{4}-\d{2}-\d{2})/i);
+    if(m){ document.getElementById('blood-date').value=m[1]; text=text.replace(/DATE:.*(\n|$)/i,'').trim(); }
+    document.getElementById('blood-results').value=text;
+    s.textContent='Loaded — review it, then click Save labs.';
+  }catch(e){ s.textContent='Could not read that PDF.'; }
+}
+(function(){
+  const bDrop=document.getElementById('blood-drop'), bPdf=document.getElementById('blood-pdf');
+  bDrop.addEventListener('click',()=>bPdf.click());
+  bPdf.addEventListener('change',e=>onLabPdf(e.target.files[0]));
+  bDrop.addEventListener('dragover',e=>{ e.preventDefault(); bDrop.style.background='#f0e9ff'; });
+  bDrop.addEventListener('dragleave',()=>{ bDrop.style.background='#fafafa'; });
+  bDrop.addEventListener('drop',e=>{ e.preventDefault(); bDrop.style.background='#fafafa'; onLabPdf(e.dataTransfer.files[0]); });
+})();
 
 // ---- AI Coach ----
 const aiDaily=document.getElementById('ai-daily'), aiMsgs=document.getElementById('ai-msgs'),
