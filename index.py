@@ -523,9 +523,13 @@ def anthropic_call(system, messages, max_tokens=700, timeout=45):
             em = r.text[:160]
         return None, "Coach error (%s): %s" % (r.status_code, em[:170])
     try:
-        parts = r.json().get("content", [])
+        j = r.json()
+        parts = j.get("content", [])
         txt = "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
-        return (txt or "(no reply)"), None
+        if not txt:
+            return None, ("The AI ran out of room before writing its answer (stop: %s) - hit the button again."
+                          % j.get("stop_reason"))
+        return txt, None
     except Exception:
         return None, "Coach parse error"
 
@@ -676,18 +680,19 @@ def handle_meal_plan(environ):
             tw or "not set", ctx.get("ftp"), goal_bits, week)
     )
     h = hashlib.sha256((mode + str(tw) + week + str(wt) + goal_bits).encode("utf-8")).hexdigest()[:16]
-    ck = "meal_plan_v2:" + h
+    ck = "meal_plan_v3:" + h
     if not req.get("force"):
         c = kv_get(ck)
-        if c:
+        if c and len(c) > 400:
             return {"text": c, "cached": True}
-    text, err = anthropic_call(MEALPLAN_SYSTEM, [{"role": "user", "content": user}], 12000, timeout=240)
+    text, err = anthropic_call(MEALPLAN_SYSTEM, [{"role": "user", "content": user}], 24000, timeout=240)
     if err:
         return {"error": err}
-    try:
-        kv_set(ck, text)
-    except Exception:
-        pass
+    if len(text) > 400:
+        try:
+            kv_set(ck, text)
+        except Exception:
+            pass
     return {"text": text}
 
 REPORT_SYSTEM = (
