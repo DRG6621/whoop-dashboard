@@ -375,15 +375,20 @@ def get_payload(fresh):
 
 # ---- HTML ----
 PAGE_URL = "https://raw.githubusercontent.com/DRG6621/whoop-dashboard/main/page.html"
-_PAGE_CACHE = {"html": None}
+_PAGE_CACHE = {"html": None, "ts": 0}
 
 def get_page():
-    if _PAGE_CACHE["html"]:
+    if _PAGE_CACHE["html"] and (time.time() - _PAGE_CACHE["ts"] < 300):
         return _PAGE_CACHE["html"]
-    r = requests.get(PAGE_URL, timeout=20)
-    r.raise_for_status()
-    _PAGE_CACHE["html"] = r.text
-    return r.text
+    try:
+        r = requests.get(PAGE_URL + "?cb=" + str(int(time.time() // 60)), timeout=20)
+        r.raise_for_status()
+        _PAGE_CACHE["html"] = r.text
+        _PAGE_CACHE["ts"] = time.time()
+    except Exception:
+        if not _PAGE_CACHE["html"]:
+            raise
+    return _PAGE_CACHE["html"]
 
 def render(data, cached):
     page = get_page()
