@@ -134,7 +134,7 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
 <div id="vitals-card"></div>
 
 <div class="card" id="inputs-card">
-  <h2>Daily Check-in <span style="font-weight:400">(synced across your devices)</span></h2>
+  <h2>Daily Check-in <span style="font-weight:400">(one per day &#8212; edit until midnight, then it locks into History)</span></h2>
   <div id="checkin-grid">
     <div><label>&#9889; Energy</label><select id="ci-energy"><option value="">&#8212;</option><option value="1">1 Drained</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Energized</option></select></div>
     <div><label>&#129346; Soreness</label><select id="ci-soreness"><option value="">&#8212;</option><option value="1">1 None</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 Very sore</option></select></div>
@@ -203,6 +203,10 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
   <div id="labs-history" style="margin-bottom:16px"></div>
   <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#128138; Supplement changes</div>
   <div id="supp-history" style="margin-bottom:16px"></div>
+  <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#128197; Daily check-ins <span style="font-weight:400;color:#94a3b8">(locked after the day ends)</span></div>
+  <div id="checkin-history" style="margin-bottom:16px"></div>
+  <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#10084;&#65039; Body &amp; vitals log <span style="font-weight:400;color:#94a3b8">(auto, one entry per day)</span></div>
+  <div id="vitals-history" style="margin-bottom:16px"></div>
   <div style="font-size:.8rem;font-weight:700;color:#334155;margin:2px 0 8px">&#129302; Coach log</div>
   <div id="coach-log"></div>
 </div>
@@ -227,9 +231,12 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
 <div id="tp-card"></div>
 <div class="card" id="macro-card"><h2>Fuel Plan <span style="font-weight:400">(today &middot; your coach's templates)</span></h2>
   <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-    <label style="font-size:.75rem;font-weight:600;color:#64748b">Today's ride time</label>
-    <input id="fuel-dur" type="number" min="0" max="360" step="15" style="width:80px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b">
-    <span style="font-size:.75rem;color:#94a3b8">minutes (0 = rest day) &#8212; carbs &amp; ride fueling adjust automatically</span>
+    <label style="font-size:.75rem;font-weight:600;color:#64748b">Ride time</label>
+    <input id="fuel-dur" type="number" min="0" max="360" step="5" style="width:78px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b">
+    <span style="font-size:.72rem;color:#94a3b8">min &#183; <span id="fuel-src"></span></span>
+    <label style="font-size:.75rem;font-weight:600;color:#64748b;margin-left:8px">Start time</label>
+    <input id="fuel-start" type="time" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;background:#fff;color:#1e293b">
+    <span style="font-size:.72rem;color:#94a3b8">&#8212; sets meal clock times</span>
   </div>
   <div id="macro-body"></div></div>
 
@@ -409,8 +416,8 @@ function render(){
 
   // readiness — WHOOP+Strava base, adjusted by the daily check-in
   const sf = w7effort<200?10:w7effort<350?28:w7effort<500?55:w7effort<650?72:88;
-  let baseReadiness=null;
-  if(hasW){ baseReadiness = Math.round(tRec*0.6 + (100-sf)*0.4); if(tHrv&&avgHrv&&tHrv<avgHrv*0.9) baseReadiness=Math.round(baseReadiness*0.88); }
+  let baseReadiness=null, hrvDip=false;
+  if(hasW){ baseReadiness = Math.round(tRec*0.6 + (100-sf)*0.4); if(tHrv&&avgHrv&&tHrv<avgHrv*0.9){ baseReadiness=Math.round(baseReadiness*0.88); hrvDip=true; } }
   const ci={ energy:+(localStorage.getItem('kd_energy')||0), soreness:+(localStorage.getItem('kd_soreness')||0), fatigue:+(localStorage.getItem('kd_fatigue')||0), sleepq:+(localStorage.getItem('kd_sleepq')||0), motivation:+(localStorage.getItem('kd_motivation')||0), illness:localStorage.getItem('kd_illness')==='1' };
   let ciAdj=0;
   if(ci.energy) ciAdj+=(ci.energy-3)*4;
@@ -433,7 +440,7 @@ function render(){
     rc.style.background=z[0]; rc.style.borderColor=z[1];
     document.getElementById('rec-icon').textContent=z[2];
     document.getElementById('rec-title').textContent=z[4];
-    let body=z[5]; if(ciAdj!==0||ci.illness) body+=' (Base '+baseReadiness+'% from WHOOP+Strava, adjusted for your check-in'+(ci.illness?' — illness flagged':'')+'.)';
+    let body=z[5]+' — How it\'s scored: WHOOP recovery '+Math.round(tRec)+'% (60%) + load freshness '+(100-sf)+'/100 (40%)'+(hrvDip?' − 12% HRV-below-baseline penalty':'')+' = base '+baseReadiness+'%'+(ciAdj!==0?' '+(ciAdj>0?'+':'')+ciAdj+' from your check-in':'')+(ci.illness?' (illness cap applied)':'')+' → '+readiness+'%.';
     document.getElementById('rec-body').textContent=body;
     document.getElementById('rd-pct').textContent=readiness+'%';
     document.getElementById('rd-fill').style.width=readiness+'%';
@@ -559,10 +566,23 @@ function render(){
   {
     const [tn,cg]= nw? tier(nw.summary):['Rest day',3];
     const mode=(localStorage.getItem('kd_dietmode')||'fatloss');
-    const defDur = tn==='Rest day'?0: tn==='Race'?240: tn==='Long / endurance'?180: tn==='Hard / intensity'?90: tn==='Easy / skills'?60:90;
-    let durMin = localStorage.getItem('kd_ride_dur');
-    durMin = (durMin===null||durMin==='') ? defDur : Number(durMin);
+    function parseDur(t){ t=(t||'').toLowerCase();
+      let m=t.match(/(\d+(?:\.\d+)?)\s*(?:hr|hrs|hour|hours)\b/); if(m){ const h=parseFloat(m[1]); const mm=t.match(/(\d+)\s*min/); return Math.round(h*60+(mm?parseInt(mm[1]):0)); }
+      m=t.match(/(\d+)\s*:\s*(\d{2})\b/); if(m) return parseInt(m[1])*60+parseInt(m[2]);
+      m=t.match(/(\d+)\s*(?:min|minutes)\b/); if(m) return parseInt(m[1]);
+      return null; }
+    const planDur = nw? parseDur((nw.summary||'')+' '+(nw.desc||'')) : null;
+    const defDur = planDur!=null? planDur : (tn==='Rest day'?0: tn==='Race'?240: tn==='Long / endurance'?180: tn==='Hard / intensity'?90: tn==='Easy / skills'?60:90);
+    const manualDur = localStorage.getItem('kd_ride_dur');
+    const isManual = !(manualDur===null||manualDur==='');
+    let durMin = isManual? Number(manualDur) : defDur;
     const fd=document.getElementById('fuel-dur'); if(fd && document.activeElement!==fd) fd.value=durMin;
+    const fsrc=document.getElementById('fuel-src');
+    if(fsrc){ fsrc.textContent = isManual? 'manual override — tap to reset to plan' : (planDur!=null?'auto from today\'s workout':'auto from workout type'); fsrc.style.cssText=isManual?'color:#d97706;font-weight:700;cursor:pointer;text-decoration:underline':'color:#94a3b8'; }
+    const startStr=localStorage.getItem('kd_ride_start')||'';
+    const fs=document.getElementById('fuel-start'); if(fs && document.activeElement!==fs) fs.value=startStr;
+    let startMin=null; if(/^\d{1,2}:\d{2}$/.test(startStr)){ const p=startStr.split(':'); startMin=(+p[0])*60+(+p[1]); }
+    const fmtT=function(m){ m=((m%1440)+1440)%1440; let h=Math.floor(m/60), mm=m%60; const ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+String(mm).padStart(2,'0')+ap; };
     const Dh=durMin/60;
     function interp(x,pts){ if(x<=pts[0][0]) return pts[0][1]; for(let i=1;i<pts.length;i++){ if(x<=pts[i][0]){ const [x0,y0]=pts[i-1],[x1,y1]=pts[i]; return y0+(y1-y0)*(x-x0)/(x1-x0);} } return pts[pts.length-1][1]; }
     let pre,post,later,during,protein,fatAdd,meals;
@@ -596,6 +616,24 @@ function render(){
         {m:'Meal 6', t:'Bedtime (casein)', p:25, c:bedC, f:7}
       ];
     }
+    // clock times per meal
+    let clocks=null;
+    if(Dh<=0){ clocks=[420, 660, 900, 1140, 1290]; }
+    else if(startMin!=null){ const e=startMin+durMin; clocks=[startMin-120, startMin, e, e+210, e+450, e+630]; }
+    if(clocks) mealRows.forEach(function(r,i){ if(clocks[i]!=null) r.t+=' · ~'+fmtT(clocks[i]); });
+    // sample meal ideas from Keith's recipes
+    function ideaFor(r,i,training){
+      if(r.wo) return ['Gatorade/Powerade + gels totaling '+r.c+'g','coconut water + chews, sip every 15–20 min'];
+      if(!training) return [['High-Protein Omelette & Veg + toast','Overnight Berry Oats (trim oats to '+r.c+'g carbs)'],['Tuna Salad Bowl (pasta trimmed to '+r.c+'g)','Greek Yogurt Protein Pudding + berries'],['Pan-Seared Fish & Green Veg (rice to '+r.c+'g)','Grilled Turkey + veg'],['Grilled Steak & Sweet Potato Mash (potato to '+r.c+'g)','chicken + veg + beans'],['25g casein in water + 1 tbsp almond butter + '+r.c+'g carbs (berries/oats)']][i]||[];
+      if(i===0) return ['Overnight Berry Oats — scale oats/fruit up to '+r.c+'g carbs','2 cups cooked rice + 25g whey + banana + honey'];
+      if(i===2) return ['Grilled Turkey + Quinoa & Mixed Veg (quinoa scaled to '+r.c+'g)','Tuna Salad Bowl (pasta to '+r.c+'g)','Protein Shake & Fruit + 1.5 cups rice'];
+      if(i===3) return ['Pan-Seared Fish & Green Veg (rice to '+r.c+'g)','High-Protein Omelette & Veg + bread'];
+      if(i===4) return ['Grilled Steak & Sweet Potato Mash (potato to '+r.c+'g)','chicken breast + 2 cups veg + beans to '+r.c+'g'];
+      return ['25g casein in water + 1 tbsp almond butter'+(r.c?' + '+r.c+'g carbs (oats/fruit)':'')];
+    }
+    const ideasHtml='<details style="margin-top:10px;border:1px solid #ede9fe;background:#faf5ff;border-radius:12px;padding:10px 14px"><summary style="cursor:pointer;font-size:.82rem;font-weight:800;color:#7c3aed">&#128161; Sample meal ideas for today (your recipes, scaled)</summary><div style="font-size:.8rem;color:#334155;line-height:1.8;margin-top:8px">'+
+      mealRows.map(function(r,i){ return '<b>'+r.m+'</b> — '+ideaFor(r,i,Dh>0).join(' &#160;&#183;&#160; '); }).join('<br>')+
+      '<div style="color:#94a3b8;margin-top:6px;font-size:.72rem">Every meal + 2 cups veggies. Swap freely within the food lists — ask the Nutritionist below for more ideas.</div></div></details>';
     const healthy=mealRows.filter(r=>!r.wo).reduce((a,r)=>a+r.c,0);
     const fatTot=mealRows.reduce((a,r)=>a+r.f,0), protTot=mealRows.reduce((a,r)=>a+r.p,0);
     const mealTable='<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:.8rem"><tr style="color:#94a3b8;text-transform:uppercase;font-size:.62rem;letter-spacing:.06em;text-align:left"><th style="padding:5px 8px">Meal</th><th style="padding:5px 8px">When</th><th style="padding:5px 8px;text-align:right">Protein</th><th style="padding:5px 8px;text-align:right">Carbs</th><th style="padding:5px 8px;text-align:right">Fat</th></tr>'+
@@ -612,7 +650,7 @@ function render(){
       '<div class="mb"><span>Healthy Carbs</span><b>'+healthy+'g</b></div>'+
       '<div class="mb"><span>Workout Carbs</span><b>'+during+'g</b></div>'+
       '<div class="mb"><span>Protein</span><b>'+protTot+'g</b></div></div>'+
-      mealTable+rideLine;
+      mealTable+rideLine+ideasHtml;
   }
 
   // guidance
@@ -680,6 +718,7 @@ function render(){
     upcoming: TP.slice(0,5).map(e=>({date:e.date,summary:e.summary}))
   };
 
+  logVitals();
   renderHistory();
   drawCharts(pmc);
   applyCollapse();
@@ -705,6 +744,22 @@ document.addEventListener('click', function(e){
   if(!col) window.dispatchEvent(new Event('resize'));  // let charts re-size on expand
 });
 
+function todayET(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'}); }
+function logVitals(){
+  let v=[]; try{ v=JSON.parse(localStorage.getItem('kd_vitals_log')||'[]'); }catch(e){}
+  const map={}; v.forEach(x=>map[x.date]=x);
+  D.forEach(function(d){ if(d.weight!=null||d.systolic!=null||d.steps!=null){ map[d.date]={date:d.date,w:d.weight,fat:d.fat,mus:d.muscle,sys:d.systolic,dia:d.diastolic,hr:d.bp_hr,st:d.steps}; } });
+  const out=Object.values(map).sort(function(a,b){ return a.date<b.date?-1:1; }).slice(-150);
+  const s=JSON.stringify(out);
+  if(s!==localStorage.getItem('kd_vitals_log')) localStorage.setItem('kd_vitals_log', s);
+}
+function checkinRollover(){
+  const cd=localStorage.getItem('kd_checkin_date');
+  if(cd && cd!==todayET()){
+    ['kd_energy','kd_soreness','kd_fatigue','kd_sleepq','kd_motivation','kd_illness','kd_note','kd_offplan','kd_offplannote','kd_otheract','kd_otherdur','kd_otherint','kd_othertss'].forEach(function(k){ localStorage.removeItem(k); });
+    localStorage.removeItem('kd_checkin_date');
+  }
+}
 function renderHistory(){
   const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const fmt=iso=>{ try{ return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return iso; } };
@@ -721,6 +776,29 @@ function renderHistory(){
     const blocks=[['Morning',e.morning],['Pre',e.pre],['Post',e.post],['Night',e.night]].filter(b=>b[1]&&b[1].trim()).map(b=>'<b>'+b[0]+':</b> '+esc(b[1]).replace(/\n/g,', ')).join('<br>');
     return '<details style="'+det+'"><summary style="'+sum+'">Stack &#183; '+fmt(e.t)+'</summary><div style="font-size:.8rem;color:#334155;margin-top:8px;line-height:1.6">'+(blocks||'(empty)')+'</div></details>';
   }).join('') : '<div style="font-size:.8rem;color:#94a3b8">No supplement changes recorded yet.</div>';
+  // daily check-in log (locked history)
+  let clg=[]; try{ clg=JSON.parse(localStorage.getItem('kd_checkin_log')||'[]'); }catch(e){}
+  const chEl=document.getElementById('checkin-history');
+  const tET=todayET();
+  chEl.innerHTML = clg.length ? clg.slice().reverse().map(function(e){
+    const scores='E'+(e.e||'–')+' · S'+(e.s||'–')+' · F'+(e.f||'–')+' · Sl'+(e.sl||'–')+' · M'+(e.m||'–');
+    const extras=[];
+    if(e.note) extras.push('Note: '+esc(e.note));
+    if(e.coach) extras.push('Coach input: '+esc(e.coach));
+    if(e.off) extras.push('&#128681; Off-plan'+(e.offn?': '+esc(e.offn):''));
+    if(e.oa&&e.od) extras.push('&#129406; '+esc(e.oa)+' '+esc(e.od)+'min '+esc(e.oi||''));
+    return '<details style="'+det+'"><summary style="'+sum+'">'+esc(e.date)+' &#8212; '+scores+(e.ill?' &#129298;':'')+(e.w?' &#183; '+esc(e.w)+' lb':'')+' <span style="font-weight:400;color:#94a3b8">'+(e.date===tET?'&#183; today (editable)':'&#183; locked')+'</span></summary><div style="font-size:.8rem;color:#334155;margin-top:8px;line-height:1.6">'+(extras.join('<br>')||'(no notes)')+'</div></details>';
+  }).join('') : '<div style="font-size:.8rem;color:#94a3b8">No check-ins logged yet — today\'s saves here at midnight.</div>';
+  // vitals log
+  let vlg=[]; try{ vlg=JSON.parse(localStorage.getItem('kd_vitals_log')||'[]'); }catch(e){}
+  const vhEl=document.getElementById('vitals-history');
+  vhEl.innerHTML = vlg.length ? vlg.slice().reverse().slice(0,45).map(function(e){
+    const bits=[]; if(e.w!=null) bits.push('<b>'+e.w+' lb</b>'+(e.fat!=null?' ('+e.fat+'% fat)':''));
+    if(e.sys!=null) bits.push('BP '+e.sys+'/'+e.dia+(e.hr?' @'+e.hr:''));
+    if(e.st!=null) bits.push(e.st.toLocaleString()+' steps');
+    if(e.mus!=null) bits.push('muscle '+e.mus+' lb');
+    return '<div style="border-top:1px solid #f1f5f9;padding:6px 4px;font-size:.8rem;display:flex;gap:10px;flex-wrap:wrap"><span style="font-weight:700;min-width:86px">'+esc(e.date)+'</span><span style="color:#334155">'+bits.join(' &#183; ')+'</span></div>';
+  }).join('') : '<div style="font-size:.8rem;color:#94a3b8">Vitals will log automatically each day.</div>';
   let cl=[]; try{ cl=JSON.parse(localStorage.getItem('kd_coach_log')||'[]'); }catch(e){}
   const cEl=document.getElementById('coach-log');
   cEl.innerHTML = cl.length ? cl.slice().reverse().slice(0,40).map(e=>{
@@ -810,6 +888,8 @@ async function saveState(){
 
 // controls
 document.getElementById('fuel-dur').addEventListener('input',function(){ localStorage.setItem('kd_ride_dur', this.value); render(); saveState(); });
+document.getElementById('fuel-start').addEventListener('change',function(){ localStorage.setItem('kd_ride_start', this.value); render(); saveState(); });
+document.getElementById('fuel-src').addEventListener('click',function(){ if(localStorage.getItem('kd_ride_dur')!==null){ localStorage.removeItem('kd_ride_dur'); render(); saveState(); } });
 document.getElementById('ftp').addEventListener('input',function(){ FTP=Number(this.value); localStorage.setItem('kd_ftp',FTP); render(); saveState(); });
 document.getElementById('range-seg').addEventListener('click',function(e){ if(e.target.dataset.r){ RANGE=Number(e.target.dataset.r); localStorage.setItem('kd_range',RANGE); render(); saveState(); }});
 document.getElementById('inp-save').addEventListener('click',function(){
@@ -819,7 +899,14 @@ document.getElementById('inp-save').addEventListener('click',function(){
   ['otheract','otherdur','otherint','othertss'].forEach(k=>localStorage.setItem('kd_'+k, document.getElementById('inp-'+k).value));
   localStorage.setItem('kd_offplan', document.getElementById('inp-offplan').checked?'1':'0');
   localStorage.setItem('kd_offplannote', document.getElementById('inp-offplannote').value);
-  render(); saveState(); const s=document.getElementById('inp-status'); s.textContent='Saved & synced'; setTimeout(()=>s.textContent='',2500);
+  // archive today's entry (one per day; editable until midnight)
+  const tday=todayET(); localStorage.setItem('kd_checkin_date', tday);
+  let clg=[]; try{ clg=JSON.parse(localStorage.getItem('kd_checkin_log')||'[]'); }catch(e){}
+  const g=k=>localStorage.getItem(k)||'';
+  const ent={date:tday, e:g('kd_energy'), s:g('kd_soreness'), f:g('kd_fatigue'), sl:g('kd_sleepq'), m:g('kd_motivation'), ill:g('kd_illness')==='1', note:g('kd_note'), coach:g('kd_coach'), w:g('kd_weight'), off:g('kd_offplan')==='1', offn:g('kd_offplannote'), oa:g('kd_otheract'), od:g('kd_otherdur'), oi:g('kd_otherint')};
+  const ix=clg.findIndex(x=>x.date===tday); if(ix>=0) clg[ix]=ent; else clg.push(ent); if(clg.length>90) clg=clg.slice(-90);
+  localStorage.setItem('kd_checkin_log', JSON.stringify(clg));
+  render(); saveState(); const s=document.getElementById('inp-status'); s.textContent='Saved & synced — logged for '+tday; setTimeout(()=>s.textContent='',2500);
   loadDaily(true);  // inputs changed → refresh coaching
 });
 document.getElementById('supp-save').addEventListener('click',function(){
@@ -1035,7 +1122,7 @@ aiRegen.onclick=()=>loadDaily(true);
 
 syncFields();
 render();
-loadState().then(()=>{ syncFields(); render(); loadDaily(false); });
+loadState().then(()=>{ checkinRollover(); syncFields(); render(); saveState(); loadDaily(false); });
 </script>
 </body>
 </html>
