@@ -54,6 +54,16 @@ def whoop_refresh_token():
     return kv_get("whoop_refresh") or _env("WHOOP_REFRESH_TOKEN")
 
 def refresh_whoop():
+    # Reuse a cached access token (~50 min) so we don't rotate the single-use
+    # refresh token on every page load — concurrent loads were racing the
+    # rotation and causing transient 401s mid-request.
+    try:
+        at = kv_get("whoop_access")
+        exp = kv_get("whoop_access_exp")
+        if at and exp and time.time() < float(exp) - 120:
+            return {"access_token": at}
+    except Exception:
+        pass
     rt = whoop_refresh_token()
     r = requests.post(WHOOP_TOKEN, data={
         "grant_type": "refresh_token", "refresh_token": rt,
@@ -65,6 +75,11 @@ def refresh_whoop():
     new = data.get("refresh_token", "")
     if new:
         kv_set("whoop_refresh", new)
+    try:
+        kv_set("whoop_access", data.get("access_token", ""))
+        kv_set("whoop_access_exp", str(time.time() + float(data.get("expires_in", 3600))))
+    except Exception:
+        pass
     return data
 
 def exchange_auth(code):
