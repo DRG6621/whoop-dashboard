@@ -551,7 +551,7 @@ function render(){
   if(TP.length){
     let items='';
     for(const e of TP){
-      let lbl=e.date; try{const dt=new Date(e.date.slice(0,4)+'-'+e.date.slice(4,6)+'-'+e.date.slice(6,8)); lbl=dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(x){}
+      let lbl=e.date; try{const dt=new Date(e.date.slice(0,4)+'-'+e.date.slice(4,6)+'-'+e.date.slice(6,8)+'T12:00:00'); lbl=dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(x){}
       const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       items+='<div class="tp-item"><span class="tp-date">'+lbl+'</span><span class="tp-name">'+esc(e.summary)+'</span>'+(e.desc?'<span class="tp-desc">'+esc(e.desc)+'</span>':'')+'</div>';
     }
@@ -559,7 +559,7 @@ function render(){
   } else tpEl.innerHTML='';
 
   // macro
-  const today=new Date().toISOString().slice(0,10).replace(/-/g,''); const tomo=new Date(Date.now()+864e5).toISOString().slice(0,10).replace(/-/g,'');
+  const today=todayET().replace(/-/g,''); const tomo=new Date(Date.now()+864e5).toLocaleDateString('en-CA',{timeZone:'America/New_York'}).replace(/-/g,'');
   let nw=TP.find(e=>e.date===today||e.date===tomo)||TP[0]||null;
   const mb=document.getElementById('macro-body');
   const lb=(withWeight!=null?withWeight:Number(localStorage.getItem('kd_weight')||0));
