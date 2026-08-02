@@ -2,9 +2,10 @@
 Vercel serverless dashboard for Keith's training + recovery data.
 Live-fetches WHOOP + Strava + TrainingPeaks on each load (15-min cache),
 owns the rotating WHOOP refresh token in Upstash KV, and returns an
-interactive HTML dashboard. Password protection is handled by Vercel Pro.
+interactive HTML dashboard. Login security: set env APP_PASSWORD to require
+a password (signed cookie session ~60 days, brute-force lockout via KV).
 """
-import json, os, time, urllib.parse, hashlib
+import json, os, time, urllib.parse, hashlib, hmac
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -48,6 +49,127 @@ def kv_set(key, value):
         return
     requests.post(f"{url}/set/{key}", headers={"Authorization": f"Bearer {tok}"},
                   data=value.encode("utf-8"), timeout=15)
+
+# ---- login security ----
+# Set env APP_PASSWORD in Vercel to lock the dashboard. Sessions are HMAC-signed
+# cookies derived from the password (changing the password logs everyone out).
+SESSION_DAYS = 60
+LOCKOUT_FAILS = 8       # wrong guesses allowed per window
+LOCKOUT_WINDOW = 900    # 15 minutes
+
+def _app_password():
+    return _env("APP_PASSWORD")
+
+def _coach_password():
+    return _env("COACH_PASSWORD")  # optional second login for Coach Jeremiah Bishop
+
+def _auth_secret():
+    # Derived from BOTH passwords: changing either logs everyone out.
+    return hashlib.sha256(
+        ("kd-auth-v1::" + _app_password() + "::" + _coach_password()).encode("utf-8")).digest()
+
+def make_session_token(role="athlete"):
+    payload = str(int(time.time()) + SESSION_DAYS * 86400) + ":" + role
+    sig = hmac.new(_auth_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return payload + "." + sig
+
+def session_role(tok):
+    """Return 'athlete' / 'coach' if the cookie is valid, else None."""
+    try:
+        payload, sig = tok.split(".", 1)
+        exp, _, role = payload.partition(":")
+        if time.time() > float(exp):
+            return None
+        good = hmac.new(_auth_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        return (role or "athlete") if hmac.compare_digest(sig, good) else None
+    except Exception:
+        return None
+
+def is_authed(environ):
+    if not _app_password():
+        return True  # no password configured -> open (pre-setup behavior)
+    for part in (environ.get("HTTP_COOKIE", "") or "").split(";"):
+        k, _, v = part.strip().partition("=")
+        if k == "kd_auth" and session_role(v.strip()):
+            return True
+    return False
+
+def _login_fails():
+    try:
+        o = json.loads(kv_get("login_fails") or "{}")
+        if time.time() - float(o.get("ts", 0)) > LOCKOUT_WINDOW:
+            return {"count": 0, "ts": time.time()}
+        return o
+    except Exception:
+        return {"count": 0, "ts": time.time()}
+
+def login_locked():
+    return _login_fails().get("count", 0) >= LOCKOUT_FAILS
+
+def record_login_fail():
+    o = _login_fails()
+    kv_set("login_fails", json.dumps({"count": int(o.get("count", 0)) + 1, "ts": time.time()}))
+
+def clear_login_fails():
+    kv_set("login_fails", json.dumps({"count": 0, "ts": 0}))
+
+def _pw_eq(a, b):
+    return bool(b) and hmac.compare_digest(
+        hashlib.sha256(a.encode("utf-8")).digest(),
+        hashlib.sha256(b.encode("utf-8")).digest())
+
+def check_password(pw):
+    """Return the role for a correct password, else None."""
+    if _pw_eq(pw, _app_password()):
+        return "athlete"
+    if _pw_eq(pw, _coach_password()):
+        return "coach"
+    return None
+
+LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keith's Performance HQ — Sign in</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+background:#070b1d;background-image:radial-gradient(900px 420px at 20% -5%,rgba(99,102,241,.32),transparent 60%),
+radial-gradient(700px 380px at 85% 10%,rgba(217,70,239,.20),transparent 55%),linear-gradient(180deg,#070b1d,#0b1130 50%,#070b1d)}
+.box{width:100%;max-width:380px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;
+padding:34px 30px;backdrop-filter:blur(12px);box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center}
+.bolt{font-size:2.2rem;margin-bottom:10px}
+h1{font-family:'Sora',sans-serif;font-size:1.25rem;font-weight:800;color:#f8fafc;margin-bottom:4px}
+h1 span{background:linear-gradient(92deg,#818cf8,#e879f9,#fbbf24);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{font-size:.78rem;color:#94a3b8;margin-bottom:22px}
+input{width:100%;padding:12px 14px;border-radius:12px;border:1.5px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);
+color:#f8fafc;font-size:1rem;outline:none;margin-bottom:12px;transition:border .15s}
+input:focus{border-color:#a855f7}
+button{width:100%;padding:12px;border:none;border-radius:12px;font-size:.95rem;font-weight:700;cursor:pointer;color:#fff;
+background:linear-gradient(92deg,#6366f1,#a855f7);box-shadow:0 6px 22px rgba(139,92,246,.45)}
+button:hover{filter:brightness(1.1)}button:disabled{opacity:.6;cursor:wait}
+#err{font-size:.78rem;color:#f87171;min-height:18px;margin-top:10px;font-weight:600}
+</style></head><body>
+<div class="box">
+  <div class="bolt">&#9889;</div>
+  <h1>KEITH'S <span>PERFORMANCE HQ</span></h1>
+  <div class="sub">Private dashboard &mdash; enter your athlete or coach password.</div>
+  <input id="pw" type="password" placeholder="Password" autofocus autocomplete="current-password">
+  <button id="go">Unlock</button>
+  <div id="err"></div>
+</div>
+<script>
+const pw=document.getElementById('pw'),go=document.getElementById('go'),err=document.getElementById('err');
+async function login(){
+  if(!pw.value){pw.focus();return}
+  go.disabled=true;err.textContent='';
+  try{
+    const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw.value})});
+    const j=await r.json();
+    if(j.ok){location.reload()}else{err.textContent=j.error||'Wrong password.';go.disabled=false;pw.select()}
+  }catch(e){err.textContent='Network error - try again.';go.disabled=false}
+}
+go.onclick=login;pw.addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+</script></body></html>"""
 
 # ---- token management ----
 def whoop_refresh_token():
@@ -958,6 +1080,53 @@ def handle_parse_labs(environ):
 def app(environ, start_response):
     method = environ.get("REQUEST_METHOD", "GET").upper()
     path = environ.get("PATH_INFO", "") or ""
+
+    # ---- login security gate (active once APP_PASSWORD env is set) ----
+    if method == "POST" and path.rstrip("/").endswith("login"):
+        try:
+            n = int(environ.get("CONTENT_LENGTH") or 0)
+            raw = environ["wsgi.input"].read(n) if n > 0 else b""
+            pw = json.loads((raw or b"{}").decode("utf-8")).get("password", "")
+        except Exception:
+            pw = ""
+        if login_locked():
+            out, cookie = {"error": "Too many attempts - locked for 15 minutes."}, None
+        else:
+            role = check_password(pw)
+            if role:
+                clear_login_fails()
+                out, cookie = {"ok": True, "role": role}, make_session_token(role)
+            else:
+                record_login_fail()
+                out, cookie = {"error": "Wrong password."}, None
+        headers = [("Content-Type", "application/json; charset=utf-8"), ("Cache-Control", "no-store")]
+        if cookie:
+            headers.append(("Set-Cookie",
+                "kd_auth=%s; Max-Age=%d; Path=/; HttpOnly; Secure; SameSite=Lax"
+                % (cookie, SESSION_DAYS * 86400)))
+        start_response("200 OK", headers)
+        return [json.dumps(out).encode("utf-8")]
+
+    if path.rstrip("/").endswith("logout"):
+        start_response("302 Found", [
+            ("Location", "/"),
+            ("Set-Cookie", "kd_auth=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax"),
+        ])
+        return [b""]
+
+    if not is_authed(environ):
+        if method == "POST":
+            start_response("401 Unauthorized", [
+                ("Content-Type", "application/json; charset=utf-8"),
+                ("Cache-Control", "no-store"),
+            ])
+            return [json.dumps({"error": "Not signed in - reload the page."}).encode("utf-8")]
+        start_response("401 Unauthorized", [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [LOGIN_HTML.encode("utf-8")]
+
     if method == "POST" and path.rstrip("/").endswith("coach"):
         try:
             out = handle_coach(environ)
