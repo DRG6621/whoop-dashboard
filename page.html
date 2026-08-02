@@ -29,6 +29,11 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
 .ftpwrap{display:flex;align-items:center;gap:8px;font-size:.78rem;color:#cbd5e1}
 .ftpwrap b{color:#fbbf24;font-size:.95rem}
 .ftpwrap input{width:130px;accent-color:#a855f7}
+#tabbar{position:sticky;top:10px;z-index:50;display:flex;gap:6px;margin-bottom:18px;background:rgba(10,14,35,.75);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:6px;backdrop-filter:blur(14px);flex-wrap:wrap;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+#tabbar button{flex:1;min-width:100px;border:none;background:transparent;color:#94a3b8;font-family:'Sora','Inter',sans-serif;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-radius:10px;cursor:pointer;transition:all .2s;white-space:nowrap}
+#tabbar button:hover{color:#e2e8f0;background:rgba(255,255,255,.06)}
+#tabbar button.on{background:linear-gradient(92deg,#6366f1,#a855f7);color:#fff;box-shadow:0 4px 18px rgba(139,92,246,.5)}
+.stat-chip{margin-top:5px;font-size:.6rem;font-weight:800;letter-spacing:.04em}
 .rec{border-radius:18px;padding:22px 26px;margin-bottom:16px;display:flex;gap:16px;align-items:flex-start;background:#fefce8;border:2px solid #fde047;box-shadow:0 12px 40px rgba(0,0,0,.35)}
 .rec-icon{font-size:2.4rem;line-height:1;flex-shrink:0}
 .rec-title{font-family:'Sora','Inter',sans-serif;font-size:1.18rem;font-weight:800}
@@ -106,7 +111,16 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
   <div class="ftpwrap">FTP <input type="range" id="ftp" min="200" max="380" step="5"><b id="ftp-val"></b>W</div>
 </div>
 
-<div class="rec">
+<div id="tabbar">
+  <button data-tab="cockpit" class="on">&#127937; Cockpit</button>
+  <button data-tab="performance">&#128200; Performance</button>
+  <button data-tab="ride">&#127950; Ride Analysis</button>
+  <button data-tab="nutrition">&#129367; Nutrition</button>
+  <button data-tab="health">&#10084;&#65039; Health</button>
+  <button data-tab="log">&#128203; Log</button>
+</div>
+
+<div class="rec" id="rec-card">
   <div class="rec-icon" id="rec-icon">&#128994;</div>
   <div style="flex:1">
     <div class="rec-title" id="rec-title"></div>
@@ -284,15 +298,25 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
 
 <div class="stats" id="stats"></div>
 
-<div class="card"><h2>Training Load vs. WHOOP Recovery <span style="font-weight:400">(Strava bars &middot; WHOOP line)</span></h2><div class="ch-tall"><canvas id="dual"></canvas></div></div>
-<div class="card"><h2 id="pmc-h">Fitness / Fatigue / Form</h2><div class="pmc-strip" id="pmc-strip"></div><div class="ch-tall"><canvas id="pmcc"></canvas></div></div>
-<div class="grid2">
+<div class="card" id="card-dual"><h2>Training Load vs. WHOOP Recovery <span style="font-weight:400">(Strava bars &middot; WHOOP line)</span></h2><div class="ch-tall"><canvas id="dual"></canvas></div></div>
+<div class="card" id="card-pmc"><h2 id="pmc-h">Fitness / Fatigue / Form</h2><div class="pmc-strip" id="pmc-strip"></div><div class="ch-tall"><canvas id="pmcc"></canvas></div></div>
+<div class="grid2" id="grid2-charts">
   <div class="card"><h2>HRV (+ 7-day avg)</h2><div class="ch-sm"><canvas id="hrvc"></canvas></div></div>
   <div class="card"><h2>Recovery (+ 7-day avg)</h2><div class="ch-sm"><canvas id="recc"></canvas></div></div>
 </div>
-<div class="card"><h2>Sleep Duration</h2><div class="ch-sm"><canvas id="slpc"></canvas></div></div>
+<div class="card" id="card-sleep"><h2>Sleep Duration</h2><div class="ch-sm"><canvas id="slpc"></canvas></div></div>
 <div class="card" id="steps-card" style="display:none"><h2>Daily Steps <span style="font-weight:400">(Withings)</span></h2><div class="ch-sm"><canvas id="stepc"></canvas></div></div>
 <div class="grid3" id="guidance"></div>
+
+<div class="card" id="ride-card">
+  <h2>&#127950; Ride Analysis <span style="font-weight:400">(latest Strava ride &middot; race-engineer debrief)</span></h2>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+    <button class="tb-btn" id="ride-run">Analyze my last ride</button>
+    <span id="ride-status" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+  <div id="ride-out"></div>
+  <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">VAM = vertical meters climbed per hour. Decoupling = how much your heart rate drifted vs power (aerobic durability &amp; fueling signal).</div>
+</div>
 
 <script>
 const RAW = __PAYLOAD__;
@@ -524,20 +548,29 @@ function render(){
   } else {
     vc.innerHTML='<div class="card"><h2>Body &amp; Vitals</h2><div class="g-text">Connect your Withings scale, BPM Vision cuff, or watch to auto-sync weight, blood pressure, and steps. <a href="/?wauth=1" style="color:#7c3aed;font-weight:700;text-decoration:none">Connect Withings &#8594;</a></div></div>';
   }
-  document.getElementById('steps-card').style.display = (steps7.length||stepsToday!=null)?'':'none';
+  document.getElementById('steps-card').dataset.avail = (steps7.length||stepsToday!=null)?'1':'0';
 
   // stats
   function lastScored(key){ for(let i=D.length-1;i>=0;i--){ if(D[i][key]!=null) return D[i]; } return null; }
   const rw = lastScored('recovery');
   const recSub = rw ? (rw.date===last.date ? 'WHOOP %' : 'WHOOP \u00b7 '+rw.label) : 'WHOOP %';
-  const stat=(l,v,s,c)=>'<div class="stat"><div class="stat-label">'+l+'</div><div class="stat-val" style="color:'+c+'">'+v+'</div><div class="stat-sub">'+s+'</div></div>';
+  const stat=(l,v,s,c,chip)=>'<div class="stat"><div class="stat-label">'+l+'</div><div class="stat-val" style="color:'+c+'">'+v+'</div><div class="stat-sub">'+s+'</div>'+(chip?'<div class="stat-chip" style="color:'+chip[0]+'">&#9679; '+chip[1]+'</div>':'')+'</div>';
+  const recV=rw?Math.round(rw.recovery):null;
+  const recChip = recV==null?null: recV>=67?['#22c55e','PRIMED — GO']: recV>=34?['#f59e0b','STEADY ONLY']:['#ef4444','RECOVER'];
+  let hrvChip=null;
+  if(rw&&rw.hrv!=null&&avgHrv){ const p=Math.round((rw.hrv/avgHrv-1)*100); hrvChip = p>=-5?['#22c55e',(p>=0?'+':'')+p+'% VS BASE']: p>=-12?['#f59e0b',p+'% VS BASE']:['#ef4444',p+'% — DEPLETED']; }
+  let rhrChip=null;
+  const avgRhr=avg(D.map(d=>d.rhr));
+  if(rw&&rw.rhr!=null&&avgRhr){ const d=Math.round(rw.rhr-avgRhr); rhrChip = d<=1?['#22c55e','NORMAL']: d<=4?['#f59e0b','+'+d+' ELEVATED']:['#ef4444','+'+d+' — STRESSED']; }
+  const loadChip = sf<=10?['#22c55e','LIGHT WEEK']: sf<=28?['#22c55e','BUILDING']: sf<=55?['#f59e0b','SOLID BLOCK']: sf<=72?['#fb923c','BIG LOAD']:['#ef4444','VERY BIG'];
+  const slpChip = avgSlp==null?null: avgSlp>=7.3?['#22c55e','ON TARGET']:['#f59e0b','BANK MORE'];
   document.getElementById('stats').innerHTML =
-    stat('Recovery', rw?Math.round(rw.recovery)+'%':'—',recSub,'#22c55e')+
-    stat('HRV', rw&&rw.hrv!=null?Math.round(rw.hrv):'—','ms','#6366f1')+
-    stat('RHR', rw&&rw.rhr!=null?Math.round(rw.rhr):'—','bpm','#ef4444')+
-    stat('7-Day Load', w7effort,'rel effort','#f59e0b')+
-    stat('7-Day Hours', w7hrs,'hrs riding','#3b82f6')+
-    stat('Avg Sleep', avgSlp!=null?avgSlp:'—','hrs · '+D.length+'d','#8b5cf6');
+    stat('Recovery', recV!=null?recV+'%':'—',recSub,'#22c55e',recChip)+
+    stat('HRV', rw&&rw.hrv!=null?Math.round(rw.hrv):'—','ms · base '+(avgHrv?Math.round(avgHrv):'—'),'#6366f1',hrvChip)+
+    stat('RHR', rw&&rw.rhr!=null?Math.round(rw.rhr):'—','bpm · base '+(avgRhr?Math.round(avgRhr):'—'),'#ef4444',rhrChip)+
+    stat('7-Day Load', w7effort,'rel effort','#f59e0b',loadChip)+
+    stat('7-Day Hours', w7hrs,'hrs riding','#3b82f6',null)+
+    stat('Avg Sleep', avgSlp!=null?avgSlp:'—','hrs · '+D.length+'d','#8b5cf6',slpChip);
 
   // pmc strip + heading
   const pn=pmc[pmc.length-1], ramp = pmc.length>=8? Math.round((pmc[pmc.length-1].ctl-pmc[pmc.length-8].ctl)*10)/10 : 0;
@@ -722,7 +755,36 @@ function render(){
   renderHistory();
   drawCharts(pmc);
   applyCollapse();
+  applyTab();
 }
+
+// ---- tabs (F1 cockpit layout) ----
+const TABMAP={
+  cockpit:['rec-card','stats','ai-card','guidance'],
+  performance:['tp-card','card-dual','card-pmc','grid2-charts','card-sleep','steps-card'],
+  ride:['ride-card'],
+  nutrition:['macro-card','nutri-card'],
+  health:['vitals-card','supp-card','blood-card'],
+  log:['inputs-card','history-card','report-card']
+};
+function applyTab(){
+  const act=localStorage.getItem('kdui_tab')||'cockpit';
+  document.querySelectorAll('#tabbar button').forEach(function(b){ b.classList.toggle('on', b.dataset.tab===act); });
+  for(const tab in TABMAP){
+    TABMAP[tab].forEach(function(id){
+      const el=document.getElementById(id); if(!el) return;
+      let show=(tab===act);
+      if(id==='steps-card' && el.dataset.avail==='0') show=false;
+      el.style.display=show?'':'none';
+    });
+  }
+}
+document.getElementById('tabbar').addEventListener('click',function(e){
+  const b=e.target.closest('button'); if(!b||!b.dataset.tab) return;
+  localStorage.setItem('kdui_tab', b.dataset.tab);
+  applyTab(); render();
+  window.scrollTo({top:0,behavior:'smooth'});
+});
 
 // collapsible panels — click any card title to expand/collapse (state remembered per device)
 const DEFAULT_COLLAPSED=['supp-card','blood-card','history-card','report-card','nutri-card'];
@@ -1006,6 +1068,51 @@ async function askNutritionist(){
 }
 document.getElementById('nutri-send').addEventListener('click',askNutritionist);
 document.getElementById('nutri-q').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); askNutritionist(); } });
+
+// ---- Ride Analysis (race-engineer debrief) ----
+function renderRide(j){
+  const out=document.getElementById('ride-out'); if(!j||!j.metrics){ out.innerHTML=''; return; }
+  const m=j.metrics, esc=s=>String(s==null?'—':s);
+  const cell=(l,v,s)=>'<div style="background:linear-gradient(180deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:12px;padding:11px;text-align:center"><div style="font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8">'+l+'</div><div style="font-family:Sora,Inter,sans-serif;font-size:1.25rem;font-weight:800;color:#1e293b;margin-top:2px">'+v+'</div>'+(s?'<div style="font-size:.62rem;color:#94a3b8">'+s+'</div>':'')+'</div>';
+  let h='<div style="font-size:1rem;font-weight:800;margin-bottom:2px">'+esc(j.name)+'</div><div style="font-size:.75rem;color:#94a3b8;margin-bottom:12px">'+esc(j.date)+' · '+esc(j.distMi)+' mi · '+esc(j.movingMin)+' min · '+esc(j.elevFt)+' ft climbed</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">'+
+    cell('Norm Power', m.np!=null?m.np+'W':'—', m['if']!=null?'IF '+m['if']:'')+
+    cell('TSS', esc(m.tss),'')+
+    cell('Avg Power', m.avgW!=null?m.avgW+'W':'—', m.kj!=null?m.kj+' kJ':'')+
+    cell('Heart Rate', m.avgHR!=null?m.avgHR:'—', m.maxHR?'max '+m.maxHR:'')+'</div>';
+  if(m.bests){
+    const b=m.bests, pct=x=>x?Math.round(x/j.ftp*100)+'% FTP':'';
+    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">'+
+      cell('Best 1 min', b['1min']?b['1min']+'W':'—', pct(b['1min']))+
+      cell('Best 5 min', b['5min']?b['5min']+'W':'—', pct(b['5min']))+
+      cell('Best 20 min', b['20min']?b['20min']+'W':'—', pct(b['20min']))+'</div>';
+  }
+  if(m.decouplingPct!=null){
+    const d=m.decouplingPct, col=d<5?'#22c55e':d<8?'#f59e0b':'#ef4444', txt=d<5?'Strong aerobic durability':'Fatigue / fueling drift creeping in';
+    h+='<div style="border:1.5px solid '+col+';background:'+(d<5?'#f0fdf4':d<8?'#fefce8':'#fef2f2')+';border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:.85rem"><b>Pw:HR decoupling: '+d+'%</b> — '+(d>=8?'you faded hard late; look at fueling and pacing':txt)+'</div>';
+  }
+  if(m.climbs&&m.climbs.length){
+    h+='<div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:4px 0 6px">Climbs</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:.78rem"><tr style="color:#94a3b8;text-transform:uppercase;font-size:.6rem;text-align:left"><th style="padding:4px 6px">At</th><th style="padding:4px 6px">Len</th><th style="padding:4px 6px">Gain</th><th style="padding:4px 6px">Grade</th><th style="padding:4px 6px;text-align:right">VAM</th><th style="padding:4px 6px;text-align:right">Power</th><th style="padding:4px 6px;text-align:right">W/kg</th><th style="padding:4px 6px;text-align:right">HR</th></tr>'+
+    m.climbs.map(c=>'<tr style="border-top:1px solid #f1f5f9"><td style="padding:5px 6px">'+c.startMin+'min</td><td style="padding:5px 6px">'+esc(c.km)+' km</td><td style="padding:5px 6px">'+esc(c.gainFt)+' ft</td><td style="padding:5px 6px">'+esc(c.grade)+'%</td><td style="padding:5px 6px;text-align:right;font-weight:800;color:#7c3aed">'+esc(c.vam)+'</td><td style="padding:5px 6px;text-align:right;font-weight:700">'+(c.avgW?c.avgW+'W':'—')+'</td><td style="padding:5px 6px;text-align:right">'+esc(c.wkg)+'</td><td style="padding:5px 6px;text-align:right">'+esc(c.avgHR)+'</td></tr>').join('')+'</table>';
+  } else { h+='<div style="font-size:.8rem;color:#94a3b8">No significant climbs detected on this ride.</div>'; }
+  if(j.insight){
+    h+='<div style="margin-top:12px;background:#faf5ff;border:1px solid #ede9fe;border-radius:12px;padding:12px 14px;font-size:.85rem;line-height:1.7;white-space:pre-wrap"><div style="font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c3aed;margin-bottom:5px">Race engineer debrief</div>'+j.insight.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
+  }
+  out.innerHTML=h;
+}
+try{ const saved=JSON.parse(localStorage.getItem('kd_ride_json')||'null'); if(saved) renderRide(saved); }catch(e){}
+document.getElementById('ride-run').addEventListener('click', async function(){
+  const st=document.getElementById('ride-status');
+  st.textContent='Pulling your latest ride from Strava & crunching it…'; this.disabled=true;
+  try{
+    const r=await fetch('/ride-analysis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({context:CTX})});
+    const j=await r.json();
+    if(j.error){ st.textContent=j.error; }
+    else{ renderRide(j); localStorage.setItem('kd_ride_json', JSON.stringify(j)); st.textContent='Debrief ready.'; }
+  }catch(e){ st.textContent='Analysis failed — try again.'; }
+  this.disabled=false;
+});
 
 // Coach Report — generate, email, copy, print
 document.getElementById('report-gen').addEventListener('click', async function(){

@@ -710,6 +710,174 @@ def handle_meal_plan(environ):
             pass
     return {"text": text}
 
+# ---- Ride analysis: latest Strava ride streams -> climbs/VAM/decoupling/bests ----
+def _rollmax(vals, win):
+    n = len(vals)
+    if n < win:
+        return None
+    s = sum(vals[:win]); best = s
+    for i in range(win, n):
+        s += vals[i] - vals[i - win]
+        if s > best:
+            best = s
+    return round(best / win)
+
+def analyze_streams(t, w, hr, alt, dist, ftp, weight_lb):
+    out = {}
+    n = len(t) if t else 0
+    if n < 120:
+        return None
+    w = [(x or 0) for x in (w or [0] * n)]
+    hr = [(x or 0) for x in (hr or [0] * n)]
+    alt = alt or [0] * n
+    dist = dist or [0] * n
+    # normalized power (30s rolling)
+    if any(w):
+        roll = []
+        s = 0.0
+        from collections import deque
+        q = deque()
+        for x in w:
+            q.append(x); s += x
+            if len(q) > 30:
+                s -= q.popleft()
+            roll.append(s / len(q))
+        np_ = (sum(r ** 4 for r in roll) / len(roll)) ** 0.25
+        out["np"] = round(np_)
+        out["avgW"] = round(sum(w) / n)
+        out["if"] = round(np_ / ftp, 2) if ftp else None
+        dur_h = (t[-1] - t[0]) / 3600.0
+        out["tss"] = round((dur_h * np_ * (np_ / ftp)) / ftp * 100) if ftp else None
+        out["kj"] = round(sum(w) / 1000.0 * ((t[-1] - t[0]) / n))
+        out["bests"] = {"1min": _rollmax(w, 60), "5min": _rollmax(w, 300), "20min": _rollmax(w, 1200)}
+    hrs = [x for x in hr if x > 0]
+    if hrs:
+        out["avgHR"] = round(sum(hrs) / len(hrs)); out["maxHR"] = max(hrs)
+    # decoupling (Pw:HR drift): halves of the working portion
+    idx = [i for i in range(n) if w[i] > 50 and hr[i] > 90]
+    if len(idx) > 600:
+        half = len(idx) // 2
+        a, b = idx[:half], idx[half:]
+        def ratio(ix):
+            mw = sum(w[i] for i in ix) / len(ix); mh = sum(hr[i] for i in ix) / len(ix)
+            return (mh / mw) if mw else None
+        r1, r2 = ratio(a), ratio(b)
+        if r1 and r2:
+            out["decouplingPct"] = round((r2 / r1 - 1) * 100, 1)
+    # climbs: smoothed altitude, sustained grade
+    sm = []
+    for i in range(n):
+        lo = max(0, i - 7); hi = min(n, i + 8)
+        sm.append(sum(alt[lo:hi]) / (hi - lo))
+    climbs = []
+    i = 0
+    while i < n - 30:
+        j = i + 15
+        dd = dist[j] - dist[i]; da = sm[j] - sm[i]
+        grade = (da / dd * 100) if dd > 8 else 0
+        if grade > 2.5:
+            start = i
+            k = j
+            while k < n - 15:
+                dd2 = dist[k + 15] - dist[k]
+                g2 = ((sm[k + 15] - sm[k]) / dd2 * 100) if dd2 > 8 else 0
+                if g2 < 1.0:
+                    break
+                k += 15
+            gain = sm[k] - sm[start]
+            if gain >= 25:
+                sec = t[k] - t[start]
+                dkm = (dist[k] - dist[start]) / 1000.0
+                seg_w = [w[x] for x in range(start, k) if w[x] > 0]
+                seg_h = [hr[x] for x in range(start, k) if hr[x] > 0]
+                climbs.append({
+                    "startMin": round(t[start] / 60), "min": round(sec / 60.0, 1),
+                    "km": round(dkm, 2), "gainFt": round(gain * 3.281),
+                    "grade": round((gain / (dkm * 1000) * 100), 1) if dkm > 0 else None,
+                    "vam": round(gain / (sec / 3600.0)) if sec > 60 else None,
+                    "avgW": round(sum(seg_w) / len(seg_w)) if seg_w else None,
+                    "wkg": round((sum(seg_w) / len(seg_w)) / (weight_lb / 2.205), 2) if seg_w and weight_lb else None,
+                    "avgHR": round(sum(seg_h) / len(seg_h)) if seg_h else None,
+                })
+            i = k + 30
+        else:
+            i += 15
+    climbs.sort(key=lambda c: -(c["gainFt"] or 0))
+    out["climbs"] = climbs[:6]
+    return out
+
+RIDE_INSIGHT_SYSTEM = (
+    "You are Keith's race engineer reviewing his latest ride file. Given the computed metrics, give 3-4 short, "
+    "punchy insights (one line each, start each with an emoji): what stood out (power bests vs FTP, VAM on "
+    "climbs, pacing), what the Pw:HR decoupling says about aerobic durability/fueling (under ~5% = strong, "
+    "5-8% = fatigue or under-fueling creeping in, >8% = faded hard), and one thing to do next time. "
+    "Concrete numbers, zero fluff, coach-to-racer voice. Plain text lines only."
+)
+
+def handle_ride_analysis(environ):
+    try:
+        nlen = int(environ.get("CONTENT_LENGTH") or 0)
+    except Exception:
+        nlen = 0
+    raw = environ["wsgi.input"].read(nlen) if nlen > 0 else b""
+    try:
+        req = json.loads((raw or b"{}").decode("utf-8"))
+    except Exception:
+        req = {}
+    ctx = req.get("context") or {}
+    ftp = float(ctx.get("ftp") or 300)
+    weight = float(ctx.get("weightLb") or 178)
+    st = refresh_strava()
+    h = {"Authorization": "Bearer " + st["access_token"]}
+    r = requests.get(STRAVA_BASE + "/athlete/activities", headers=h, params={"per_page": 10}, timeout=30)
+    r.raise_for_status()
+    act = None
+    for a in r.json():
+        if a.get("moving_time", 0) > 1200 and "Ride" in (a.get("type") or ""):
+            act = a; break
+    if not act:
+        return {"error": "No recent ride found on Strava."}
+    aid = act["id"]
+    ck = "ride_analysis_v1:%s" % aid
+    if not req.get("force"):
+        c = kv_get(ck)
+        if c:
+            try:
+                return json.loads(c)
+            except Exception:
+                pass
+    r = requests.get(STRAVA_BASE + "/activities/%s/streams" % aid, headers=h,
+                     params={"keys": "time,watts,heartrate,altitude,distance", "key_by_type": "true"}, timeout=45)
+    if r.status_code != 200:
+        return {"error": "Could not fetch ride streams (%s)." % r.status_code}
+    s = r.json()
+    def g(k):
+        return (s.get(k) or {}).get("data")
+    m = analyze_streams(g("time"), g("watts"), g("heartrate"), g("altitude"), g("distance"), ftp, weight)
+    if not m:
+        return {"error": "Ride too short or missing data to analyze."}
+    result = {
+        "name": act.get("name"), "date": (act.get("start_date_local") or "")[:10],
+        "distMi": round((act.get("distance") or 0) / 1609.34, 1),
+        "movingMin": round((act.get("moving_time") or 0) / 60),
+        "elevFt": round((act.get("total_elevation_gain") or 0) * 3.281),
+        "metrics": m, "ftp": ftp,
+    }
+    # AI race-engineer insights
+    try:
+        summary = json.dumps(result)[:3000]
+        text, err = anthropic_call(RIDE_INSIGHT_SYSTEM, [
+            {"role": "user", "content": "FTP %sW, weight %s lb. Ride data: %s\n\nGive me the debrief." % (ftp, weight, summary)}], 2000, timeout=90)
+        if text:
+            result["insight"] = text
+    except Exception:
+        pass
+    try:
+        kv_set(ck, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
 REPORT_SYSTEM = (
     "Write a concise athlete status report FROM Keith TO his cycling coach for review. Professional, "
     "data-first, plain text (no markdown symbols except simple dashes), ready to paste into an email. "
@@ -795,6 +963,18 @@ def app(environ, start_response):
             out = handle_coach(environ)
         except Exception as e:
             out = {"error": "Coach failed: " + str(e)[:140]}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
+    if method == "POST" and path.rstrip("/").endswith("ride-analysis"):
+        try:
+            out = handle_ride_analysis(environ)
+        except Exception as e:
+            out = {"error": "Ride analysis failed: " + str(e)[:140]}
         body = json.dumps(out).encode("utf-8")
         start_response("200 OK", [
             ("Content-Type", "application/json; charset=utf-8"),
