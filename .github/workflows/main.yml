@@ -1,1 +1,11 @@
-
+# Disabled — the dashboard deploys automatically via Vercel on every commit.
+# This workflow exists only so GitHub stops emailing "No jobs were run" failures.
+# It can only be started manually (workflow_dispatch) and does nothing.
+name: disabled
+on:
+  workflow_dispatch:
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This workflow is intentionally disabled. Deploys happen on Vercel."
