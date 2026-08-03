@@ -109,6 +109,8 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
     <button data-r="7">7d</button><button data-r="30" class="on">30d</button><button data-r="90">90d</button>
   </div>
   <div class="ftpwrap">FTP <input type="range" id="ftp" min="200" max="380" step="5"><b id="ftp-val"></b>W</div>
+  <button id="btn-logout" title="Sign out of this device" style="margin-left:auto"
+    onclick="if(confirm('Sign out of the dashboard on this device?'))location.href='/logout'">&#128274; Sign out</button>
 </div>
 
 <div id="tabbar">
