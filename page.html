@@ -339,6 +339,9 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
       <input type="date" id="race-date" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.85rem;background:#fff;color:#1e293b">
     </div>
     <div>
+      <label>Rival watch list <span style="font-weight:400;text-transform:none">(Strava profile links, one per line)</span></label>
+      <textarea id="race-rival-list" rows="3" placeholder="https://www.strava.com/athletes/1084616  (Anthony Casini)&#10;https://www.strava.com/athletes/…" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.78rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5;margin-bottom:4px"></textarea>
+      <div style="font-size:.68rem;color:#94a3b8;margin-bottom:10px">Tell Claude <b>&ldquo;scout my rivals&rdquo;</b> &mdash; it opens each profile through your Strava login, pulls their recent numbers, and refreshes the intel below.</div>
       <label>Rival intel <span style="font-weight:400;text-transform:none">(names + what you know: strengths, results, watts if public)</span></label>
       <textarea id="race-rivals" rows="9" placeholder="e.g.&#10;John D — strong 20-min climber, won Lost River 45-49 last year, weak in technical descents&#10;Mike R — big engine on flats, fades after 3h, always attacks early" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.8rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5"></textarea>
       <div style="font-size:.68rem;color:#94a3b8;margin-top:4px">Strava keeps other riders' power data private, so this box is your scouting notebook &mdash; results pages, what you've seen in races, their public profile stats.</div>
@@ -969,6 +972,7 @@ function syncFields(){
   document.getElementById('race-name').value = localStorage.getItem('kd_race_name')||localStorage.getItem('kd_event_name')||'';
   document.getElementById('race-date').value = localStorage.getItem('kd_race_date')||localStorage.getItem('kd_event_date')||'';
   document.getElementById('race-rivals').value = localStorage.getItem('kd_rivals')||'';
+  document.getElementById('race-rival-list').value = localStorage.getItem('kd_rival_list')||'';
   const savedPlan=localStorage.getItem('kd_meal_plan')||'';
   if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); document.getElementById('nutri-actions').style.display='flex'; const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
   const savedRep=localStorage.getItem('kd_coach_report')||'';
@@ -1165,6 +1169,7 @@ document.getElementById('race-gpx').addEventListener('change', function(){
   document.getElementById(id).addEventListener('change',function(){ localStorage.setItem('kd_'+id.replace('-','_'), this.value); saveState(); });
 });
 document.getElementById('race-rivals').addEventListener('change',function(){ localStorage.setItem('kd_rivals', this.value); saveState(); });
+document.getElementById('race-rival-list').addEventListener('change',function(){ localStorage.setItem('kd_rival_list', this.value); saveState(); });
 function renderRacePlan(j){
   const c=j.course||{}; const el=document.getElementById('race-out');
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
