@@ -320,6 +320,37 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
   <div style="font-size:.68rem;color:#cbd5e1;margin-top:8px">VAM = vertical meters climbed per hour. Decoupling = how much your heart rate drifted vs power (aerobic durability &amp; fueling signal).</div>
 </div>
 
+<div class="card" id="race-card">
+  <h2>&#127937; Race Planner <span style="font-weight:400">(GPX course + rival intel &rarr; battle plan)</span></h2>
+  <div style="font-size:.78rem;color:#475569;margin-bottom:12px">Drop in the race's GPX file, pick the surface, and add what you know about your rivals. You get the course broken down climb-by-climb with power targets from <b>your</b> numbers, plus a tactician's plan for where to attack and how to counter each rival.</div>
+  <div class="inputs-row">
+    <div>
+      <label>Race GPX file</label>
+      <input type="file" id="race-gpx" accept=".gpx" style="width:100%;padding:8px;border:1.5px dashed #c4b5fd;border-radius:10px;font-size:.78rem;background:#faf5ff;color:#1e293b">
+      <div id="race-gpx-name" style="font-size:.7rem;color:#7c3aed;font-weight:700;margin:4px 0 8px"></div>
+      <label>Surface / ride type</label>
+      <select id="race-type" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.85rem;background:#fff;color:#1e293b;margin-bottom:8px">
+        <option value="gravel">Gravel</option><option value="road">Road</option>
+        <option value="mtb">Mountain</option><option value="cx">Cyclocross</option>
+      </select>
+      <label>Race name</label>
+      <input type="text" id="race-name" placeholder="e.g. Big Sugar" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.85rem;background:#fff;color:#1e293b;margin-bottom:8px">
+      <label>Race date</label>
+      <input type="date" id="race-date" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.85rem;background:#fff;color:#1e293b">
+    </div>
+    <div>
+      <label>Rival intel <span style="font-weight:400;text-transform:none">(names + what you know: strengths, results, watts if public)</span></label>
+      <textarea id="race-rivals" rows="9" placeholder="e.g.&#10;John D — strong 20-min climber, won Lost River 45-49 last year, weak in technical descents&#10;Mike R — big engine on flats, fades after 3h, always attacks early" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.8rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5"></textarea>
+      <div style="font-size:.68rem;color:#94a3b8;margin-top:4px">Strava keeps other riders' power data private, so this box is your scouting notebook &mdash; results pages, what you've seen in races, their public profile stats.</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:12px">
+    <button class="tb-btn" id="race-run">Build my race plan</button>
+    <span id="race-status" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+  <div id="race-out" style="margin-top:14px"></div>
+</div>
+
 <script>
 const RAW = __PAYLOAD__;
 const CACHED = "__CACHED__";
@@ -764,7 +795,7 @@ function render(){
 const TABMAP={
   cockpit:['rec-card','stats','ai-card','guidance'],
   performance:['tp-card','card-dual','card-pmc','grid2-charts','card-sleep','steps-card'],
-  ride:['ride-card'],
+  ride:['ride-card','race-card'],
   nutrition:['macro-card','nutri-card'],
   health:['vitals-card','supp-card','blood-card'],
   log:['inputs-card','history-card','report-card']
@@ -934,6 +965,10 @@ function syncFields(){
     document.getElementById('hero-date').textContent=k;
   }catch(e){}
   document.getElementById('report-email').value = localStorage.getItem('kd_coach_email')||'';
+  document.getElementById('race-type').value = localStorage.getItem('kd_race_type')||'gravel';
+  document.getElementById('race-name').value = localStorage.getItem('kd_race_name')||localStorage.getItem('kd_event_name')||'';
+  document.getElementById('race-date').value = localStorage.getItem('kd_race_date')||localStorage.getItem('kd_event_date')||'';
+  document.getElementById('race-rivals').value = localStorage.getItem('kd_rivals')||'';
   const savedPlan=localStorage.getItem('kd_meal_plan')||'';
   if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); document.getElementById('nutri-actions').style.display='flex'; const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
   const savedRep=localStorage.getItem('kd_coach_report')||'';
@@ -1113,6 +1148,57 @@ document.getElementById('ride-run').addEventListener('click', async function(){
     if(j.error){ st.textContent=j.error; }
     else{ renderRide(j); localStorage.setItem('kd_ride_json', JSON.stringify(j)); st.textContent='Debrief ready.'; }
   }catch(e){ st.textContent='Analysis failed — try again.'; }
+  this.disabled=false;
+});
+
+// ---- Race Planner: GPX + rival intel -> battle plan ----
+let RACE_GPX = '';
+document.getElementById('race-gpx').addEventListener('change', function(){
+  const f=this.files&&this.files[0]; const nm=document.getElementById('race-gpx-name');
+  if(!f){ RACE_GPX=''; nm.textContent=''; return; }
+  if(f.size>4_000_000){ nm.textContent='File too big (max ~4 MB) — export a simplified GPX.'; RACE_GPX=''; return; }
+  const rd=new FileReader();
+  rd.onload=e=>{ RACE_GPX=String(e.target.result||''); nm.textContent='✓ '+f.name+' loaded ('+Math.round(f.size/1024)+' KB)'; };
+  rd.readAsText(f);
+});
+['race-type','race-name','race-date'].forEach(function(id){
+  document.getElementById(id).addEventListener('change',function(){ localStorage.setItem('kd_'+id.replace('-','_'), this.value); saveState(); });
+});
+document.getElementById('race-rivals').addEventListener('change',function(){ localStorage.setItem('kd_rivals', this.value); saveState(); });
+function renderRacePlan(j){
+  const c=j.course||{}; const el=document.getElementById('race-out');
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let h='<div style="font-size:.95rem;font-weight:800;margin-bottom:2px">'+esc(j.raceName||'Course')+(j.raceDate?' · '+esc(j.raceDate):'')+' <span style="font-weight:500;color:#64748b;text-transform:capitalize">('+esc(j.rideType||'')+')</span></div>';
+  h+='<div class="mg" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0">';
+  [['DISTANCE',c.mi+' mi',c.km+' km'],['CLIMBING',(c.gainFt||0).toLocaleString()+' ft',c.nClimbs+' climbs found'],['EST. TIME','~'+c.estHours+' h','at IF '+c.targetIF],['TARGET POWER',c.targetW+'W','NP for your FTP']].forEach(function(x){
+    h+='<div style="background:linear-gradient(180deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:12px;padding:10px;text-align:center"><span style="font-size:.6rem;font-weight:700;letter-spacing:.06em;color:#94a3b8">'+x[0]+'</span><b style="display:block;font-size:1.15rem;margin:2px 0">'+x[1]+'</b><span style="font-size:.62rem;color:#64748b">'+x[2]+'</span></div>';
+  });
+  h+='</div>';
+  if((c.climbs||[]).length){
+    h+='<div style="font-size:.68rem;font-weight:800;letter-spacing:.06em;color:#7c3aed;margin:6px 0 4px">KEY CLIMBS (biggest first)</div>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.74rem"><tr style="color:#94a3b8;text-align:left"><th style="padding:3px 8px 3px 0">AT</th><th style="padding:3px 8px">LEN</th><th style="padding:3px 8px">GAIN</th><th style="padding:3px 8px">GRADE</th><th style="padding:3px 8px">EST</th><th style="padding:3px 8px">TARGET</th></tr>';
+    c.climbs.forEach(function(cl){ h+='<tr style="border-top:1px solid #f1f5f9"><td style="padding:4px 8px 4px 0;font-weight:700">'+cl.atKm+' km</td><td style="padding:4px 8px">'+cl.km+' km</td><td style="padding:4px 8px">'+cl.gainFt+' ft</td><td style="padding:4px 8px">'+cl.grade+'%</td><td style="padding:4px 8px">'+cl.estMin+' min</td><td style="padding:4px 8px;font-weight:700;color:#7c3aed">'+cl.targetW+'W</td></tr>'; });
+    h+='</table></div>';
+  }
+  if(j.plan){ h+='<div style="background:linear-gradient(180deg,#fdf4ff,#faf5ff);border:1px solid #f0abfc;border-radius:12px;padding:14px;margin-top:12px"><div style="font-size:.68rem;font-weight:800;letter-spacing:.08em;color:#a21caf;margin-bottom:8px">RACE STRATEGY</div><div style="font-size:.82rem;line-height:1.65;white-space:pre-wrap">'+esc(j.plan)+'</div></div>'; }
+  h+='<div style="display:flex;gap:8px;margin-top:10px"><button class="tb-btn" style="font-size:.72rem;padding:5px 11px" onclick="printHtml(\'Race Plan\',document.getElementById(\'race-out\').innerHTML)">&#128424; Print plan</button></div>';
+  el.innerHTML=h;
+}
+try{ const rp=JSON.parse(localStorage.getItem('kd_race_plan')||'null'); if(rp) renderRacePlan(rp); }catch(e){}
+document.getElementById('race-run').addEventListener('click', async function(){
+  const st=document.getElementById('race-status');
+  if(!RACE_GPX){ st.textContent='Pick the race GPX file first.'; return; }
+  st.textContent='Parsing course & building your battle plan (can take a minute)…'; this.disabled=true;
+  try{
+    const body={ gpx:RACE_GPX, rideType:document.getElementById('race-type').value,
+      raceName:document.getElementById('race-name').value, raceDate:document.getElementById('race-date').value,
+      rivals:document.getElementById('race-rivals').value, context:CTX,
+      lastRide:(localStorage.getItem('kd_ride_json')||'') };
+    const r=await fetch('/race-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.error){ st.textContent=j.error; if(j.course){ renderRacePlan(j); } }
+    else{ renderRacePlan(j); try{ localStorage.setItem('kd_race_plan', JSON.stringify(j)); saveState(); }catch(e){} st.textContent=j.cached?'Plan ready (cached — same inputs).':'Battle plan ready.'; }
+  }catch(e){ st.textContent='Race plan failed — try again.'; }
   this.disabled=false;
 });
 

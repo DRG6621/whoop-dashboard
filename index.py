@@ -1000,6 +1000,227 @@ def handle_ride_analysis(environ):
         pass
     return result
 
+# ---- Race Planner: GPX course + rival intel -> AI race strategy ----
+RIDE_TYPES = {
+    # Crr rolling resistance, CdA drag, bike+kit lb, descent speed cap km/h
+    "road":   {"crr": 0.0045, "cda": 0.32, "bike_lb": 19, "vmax": 58},
+    "gravel": {"crr": 0.0085, "cda": 0.36, "bike_lb": 21, "vmax": 46},
+    "mtb":    {"crr": 0.0140, "cda": 0.42, "bike_lb": 26, "vmax": 38},
+    "cx":     {"crr": 0.0110, "cda": 0.38, "bike_lb": 18, "vmax": 40},
+}
+
+def parse_gpx(txt):
+    """Return list of (lat, lon, ele_m). Handles any GPX namespace."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(txt)
+    pts = []
+    for el in root.iter():
+        if el.tag.split("}")[-1] in ("trkpt", "rtept"):
+            try:
+                lat = float(el.get("lat")); lon = float(el.get("lon"))
+            except Exception:
+                continue
+            ele = None
+            for ch in el:
+                if ch.tag.split("}")[-1] == "ele":
+                    try:
+                        ele = float(ch.text)
+                    except Exception:
+                        pass
+            if ele is None:
+                ele = pts[-1][2] if pts else 0.0
+            pts.append((lat, lon, ele))
+    return pts
+
+def _hav_m(a, b):
+    import math
+    R = 6371000.0
+    la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    x = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 2 * R * math.asin(min(1, x ** 0.5))
+
+def _solve_speed(power, grade, mass, crr, cda, vmax_kmh):
+    """Solve P = v*(m g (grade+crr)) + 0.5 rho CdA v^3 (drivetrain ~3%) for v.
+    Bisection on the single negative->positive sign change (Newton diverges on descents)."""
+    g = 9.81; rho = 1.20; p = power * 0.97
+    cap = vmax_kmh / 3.6
+    def f(v):
+        return v * mass * g * (grade + crr) + 0.5 * rho * cda * v ** 3 - p
+    if f(cap) <= 0:
+        return cap  # equilibrium speed above the cap (steep descent) -> ride the cap
+    lo, hi = 0.3, cap
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if f(mid) > 0:
+            hi = mid
+        else:
+            lo = mid
+    return max(0.5, (lo + hi) / 2)
+
+def analyze_course(pts, ftp, rider_lb, ride_type):
+    """Course metrics + climb list + iterated time/power estimate."""
+    cfg = RIDE_TYPES.get(ride_type, RIDE_TYPES["gravel"])
+    # downsample to <= 3000 points
+    if len(pts) > 3000:
+        step = len(pts) / 3000.0
+        pts = [pts[int(i * step)] for i in range(3000)]
+    n = len(pts)
+    if n < 50:
+        return None
+    dist = [0.0]
+    for i in range(1, n):
+        dist.append(dist[-1] + _hav_m(pts[i - 1], pts[i]))
+    total_km = dist[-1] / 1000.0
+    if total_km < 1:
+        return None
+    # smooth elevation
+    ele = [p[2] for p in pts]
+    sm = []
+    for i in range(n):
+        lo = max(0, i - 5); hi = min(n, i + 6)
+        sm.append(sum(ele[lo:hi]) / (hi - lo))
+    gain = sum(max(0, sm[i] - sm[i - 1]) for i in range(1, n))
+    mass = (rider_lb + cfg["bike_lb"]) / 2.205
+    # climbs: sustained grade > 3%, gain >= 20 m
+    climbs = []
+    i = 0
+    while i < n - 5:
+        j = i
+        while j < n - 1:
+            dd = dist[j + 1] - dist[j]
+            g2 = (sm[j + 1] - sm[j]) / dd if dd > 3 else 0
+            if g2 < 0.015:
+                break
+            j += 1
+        seg_d = dist[j] - dist[i]; seg_g = sm[j] - sm[i]
+        if seg_g >= 20 and seg_d > 100 and seg_g / seg_d > 0.03:
+            climbs.append({"i": i, "j": j, "atKm": round(dist[i] / 1000, 1),
+                           "km": round(seg_d / 1000, 2), "gainFt": round(seg_g * 3.281),
+                           "grade": round(seg_g / seg_d * 100, 1)})
+            i = j + 3
+        else:
+            i += 1
+    # time estimate: 1 km pieces, iterate IF by duration twice
+    est_h = total_km / 25.0
+    target_if = 0.8
+    for _ in range(3):
+        target_if = 0.85 if est_h < 2 else (0.78 if est_h < 4 else 0.72)
+        p_target = ftp * target_if
+        tsec = 0.0
+        k0 = 0
+        while k0 < n - 1:
+            k1 = k0
+            while k1 < n - 1 and dist[k1] - dist[k0] < 1000:
+                k1 += 1
+            dd = dist[k1] - dist[k0]
+            if dd <= 0:
+                break
+            gr = (sm[k1] - sm[k0]) / dd
+            pw = p_target * (1.12 if gr > 0.03 else (0.55 if gr < -0.02 else 1.0))
+            v = _solve_speed(pw, gr, mass, cfg["crr"], cfg["cda"], cfg["vmax"])
+            tsec += dd / v
+            k0 = k1
+        # technical-surface fudge
+        tsec *= {"road": 1.0, "gravel": 1.04, "mtb": 1.12, "cx": 1.10}.get(ride_type, 1.05)
+        est_h = tsec / 3600.0
+    p_target = round(ftp * target_if)
+    # per-climb targets/times
+    for c in climbs:
+        gr = c["grade"] / 100.0
+        pw = ftp * min(0.95, target_if + 0.12)
+        v = _solve_speed(pw, gr, mass, cfg["crr"], cfg["cda"], cfg["vmax"])
+        c["estMin"] = round((c["km"] * 1000 / v) / 60.0, 1)
+        c["targetW"] = round(pw)
+        del c["i"]; del c["j"]
+    climbs_sorted = sorted(climbs, key=lambda c: -c["gainFt"])[:8]
+    # elevation profile for a mini chart (120 points)
+    prof = []
+    for k in range(120):
+        idx = min(n - 1, int(k * n / 120))
+        prof.append([round(dist[idx] / 1000.0, 1), round(sm[idx])])
+    return {
+        "km": round(total_km, 1), "mi": round(total_km / 1.609, 1),
+        "gainFt": round(gain * 3.281), "gainM": round(gain),
+        "estHours": round(est_h, 1), "targetIF": target_if, "targetW": p_target,
+        "climbs": climbs_sorted, "nClimbs": len(climbs), "profile": prof,
+    }
+
+RACE_STRATEGY_SYSTEM = (
+    "You are Keith's race tactician and directeur sportif preparing him for a specific race. You get: the course "
+    "breakdown parsed from the official GPX (distance, climbing, every key climb with grade/length/estimated time), "
+    "the surface type, days until race day, Keith's REAL measured power profile and fitness data, and his own "
+    "scouting notes on rivals. Write a race plan with these sections, plain text, ALL-CAPS section titles:\n"
+    "WHERE THIS RACE IS DECIDED - the 2-3 course features that will make the selection, with km marks.\n"
+    "YOUR WEAPONS - what in Keith's actual numbers he can leverage (be specific: watts, W/kg, durability).\n"
+    "SECTION-BY-SECTION PLAN - pacing through the course in order with power targets in watts; when to sit in, "
+    "when to push, descent/technical notes for the surface type.\n"
+    "RIVAL PLAYBOOK - for each rival named in his notes: their likely strength, where they'll attack, exactly how "
+    "to counter or exploit them. If no rival intel given, give tactics for racing unknowns at his level.\n"
+    "FUELING SCHEDULE - carbs/hr and when, matched to the estimated duration and his coach's fueling system "
+    "(60-90g carbs/hr for races over 2h; bottles + solids early, gels late).\n"
+    "FINAL 72 HOURS - taper, openers, kit/tire notes for the surface.\n"
+    "Be concrete, numbers everywhere, coach-to-racer voice, no fluff. If his fitness data suggests a weakness for "
+    "this course, say it straight and give the workaround."
+)
+
+def handle_race_plan(environ):
+    try:
+        nlen = int(environ.get("CONTENT_LENGTH") or 0)
+    except Exception:
+        nlen = 0
+    raw = environ["wsgi.input"].read(nlen) if nlen > 0 else b""
+    try:
+        req = json.loads((raw or b"{}").decode("utf-8"))
+    except Exception:
+        return {"error": "Bad request."}
+    gpx = req.get("gpx") or ""
+    if not gpx.strip():
+        return {"error": "No GPX file received."}
+    ctx = req.get("context") or {}
+    ftp = float(ctx.get("ftp") or 300)
+    weight = float(ctx.get("weightLb") or ctx.get("smoothWeightLb") or 178)
+    rtype = (req.get("rideType") or "gravel").lower()
+    try:
+        pts = parse_gpx(gpx)
+    except Exception as e:
+        return {"error": "Could not read that GPX file: " + str(e)[:100]}
+    course = analyze_course(pts, ftp, weight, rtype)
+    if not course:
+        return {"error": "GPX parsed but the course is too short/empty to analyze."}
+    rivals = (req.get("rivals") or "").strip()[:2500]
+    rname = (req.get("raceName") or "").strip()[:120]
+    rdate = (req.get("raceDate") or "").strip()[:20]
+    ck = "race_plan_v1:" + hashlib.sha256(
+        (json.dumps(course, sort_keys=True) + rivals + rtype + rname + str(ftp)).encode("utf-8")).hexdigest()[:16]
+    if not req.get("force"):
+        c = kv_get(ck)
+        if c:
+            try:
+                out = json.loads(c)
+                out["cached"] = True
+                return out
+            except Exception:
+                pass
+    ctxt = _ctx_text(ctx)
+    ride_json = (req.get("lastRide") or "")[:2000]
+    user = ("RACE: %s%s | surface: %s\nCOURSE (from GPX): %s\n\nMY CURRENT DATA:\n%s\n" %
+            (rname or "unnamed race", (" on " + rdate) if rdate else "", rtype,
+             json.dumps(course)[:2600], ctxt))
+    if ride_json:
+        user += "\nMY LATEST ANALYZED RIDE (real measured power): " + ride_json
+    user += ("\nRIVAL SCOUTING NOTES (from me):\n" + (rivals or "(none given)") +
+             "\n\nBuild my race plan now.")
+    text, err = anthropic_call(RACE_STRATEGY_SYSTEM, [{"role": "user", "content": user}], 8000, timeout=200)
+    if err:
+        return {"error": err, "course": course}
+    result = {"course": course, "plan": text, "raceName": rname, "raceDate": rdate, "rideType": rtype}
+    try:
+        if len(text) > 400:
+            kv_set(ck, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
 REPORT_SYSTEM = (
     "Write a concise athlete status report FROM Keith TO his cycling coach for review. Professional, "
     "data-first, plain text (no markdown symbols except simple dashes), ready to paste into an email. "
@@ -1144,6 +1365,18 @@ def app(environ, start_response):
             out = handle_ride_analysis(environ)
         except Exception as e:
             out = {"error": "Ride analysis failed: " + str(e)[:140]}
+        body = json.dumps(out).encode("utf-8")
+        start_response("200 OK", [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+        ])
+        return [body]
+
+    if method == "POST" and path.rstrip("/").endswith("race-plan"):
+        try:
+            out = handle_race_plan(environ)
+        except Exception as e:
+            out = {"error": "Race plan failed: " + str(e)[:140]}
         body = json.dumps(out).encode("utf-8")
         start_response("200 OK", [
             ("Content-Type", "application/json; charset=utf-8"),
