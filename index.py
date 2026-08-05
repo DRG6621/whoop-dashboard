@@ -1032,6 +1032,74 @@ def parse_gpx(txt):
             pts.append((lat, lon, ele))
     return pts
 
+def parse_fit(data):
+    """Minimal FIT course parser: extract (lat, lon, ele_m) from record messages (global msg 20).
+    Handles definition/data/compressed-timestamp records and developer fields."""
+    import struct
+    if len(data) < 14 or data[8:12] != b".FIT":
+        raise ValueError("not a FIT file")
+    hlen = data[0]
+    pos = hlen
+    end = len(data) - 2  # trailing CRC
+    defs = {}
+    pts = []
+    last_lat = last_lon = None
+    while pos < end:
+        hdr = data[pos]; pos += 1
+        if hdr & 0x80:  # compressed timestamp data message
+            local = (hdr >> 5) & 0x3
+            is_def = False
+        else:
+            local = hdr & 0x0F
+            is_def = bool(hdr & 0x40)
+        if is_def:
+            arch = data[pos + 1]
+            fmt = "<H" if arch == 0 else ">H"
+            gmsg = struct.unpack_from(fmt, data, pos + 2)[0]
+            nf = data[pos + 4]
+            pos += 5
+            fields = []
+            for _ in range(nf):
+                fields.append((data[pos], data[pos + 1], data[pos + 2]))
+                pos += 3
+            if hdr & 0x20:  # developer fields
+                nd = data[pos]; pos += 1
+                pos += 3 * nd
+            defs[local] = (gmsg, arch, fields)
+        else:
+            d = defs.get(local)
+            if d is None:
+                raise ValueError("corrupt FIT (data before definition)")
+            gmsg, arch, fields = d
+            lat = lon = ele = None
+            for fnum, fsize, ftype in fields:
+                raw = data[pos:pos + fsize]; pos += fsize
+                if gmsg != 20:
+                    continue
+                bo = "little" if arch == 0 else "big"
+                if fnum == 0 and fsize == 4:
+                    v = int.from_bytes(raw, bo, signed=True)
+                    if v != 0x7FFFFFFF:
+                        lat = v * (180.0 / 2147483648.0)
+                elif fnum == 1 and fsize == 4:
+                    v = int.from_bytes(raw, bo, signed=True)
+                    if v != 0x7FFFFFFF:
+                        lon = v * (180.0 / 2147483648.0)
+                elif fnum == 2 and fsize == 2:  # altitude uint16 /5 - 500
+                    v = int.from_bytes(raw, bo)
+                    if v != 0xFFFF:
+                        ele = v / 5.0 - 500.0
+                elif fnum == 78 and fsize == 4:  # enhanced_altitude uint32 /5 - 500
+                    v = int.from_bytes(raw, bo)
+                    if v != 0xFFFFFFFF:
+                        ele = v / 5.0 - 500.0
+            if gmsg == 20 and lat is not None and lon is not None:
+                if ele is None:
+                    ele = pts[-1][2] if pts else 0.0
+                pts.append((lat, lon, ele))
+                last_lat, last_lon = lat, lon
+    return pts
+
 def _hav_m(a, b):
     import math
     R = 6371000.0
@@ -1174,16 +1242,21 @@ def handle_race_plan(environ):
     except Exception:
         return {"error": "Bad request."}
     gpx = req.get("gpx") or ""
-    if not gpx.strip():
-        return {"error": "No GPX file received."}
+    fit_b64 = req.get("fitB64") or ""
+    if not gpx.strip() and not fit_b64:
+        return {"error": "No course file received."}
     ctx = req.get("context") or {}
     ftp = float(ctx.get("ftp") or 300)
     weight = float(ctx.get("weightLb") or ctx.get("smoothWeightLb") or 178)
     rtype = (req.get("rideType") or "gravel").lower()
     try:
-        pts = parse_gpx(gpx)
+        if fit_b64:
+            import base64
+            pts = parse_fit(base64.b64decode(fit_b64))
+        else:
+            pts = parse_gpx(gpx)
     except Exception as e:
-        return {"error": "Could not read that GPX file: " + str(e)[:100]}
+        return {"error": "Could not read that course file: " + str(e)[:100]}
     course = analyze_course(pts, ftp, weight, rtype)
     if not course:
         return {"error": "GPX parsed but the course is too short/empty to analyze."}

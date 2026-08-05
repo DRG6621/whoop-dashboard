@@ -325,8 +325,8 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
   <div style="font-size:.78rem;color:#475569;margin-bottom:12px">Drop in the race's GPX file, pick the surface, and add what you know about your rivals. You get the course broken down climb-by-climb with power targets from <b>your</b> numbers, plus a tactician's plan for where to attack and how to counter each rival.</div>
   <div class="inputs-row">
     <div>
-      <label>Race GPX file</label>
-      <input type="file" id="race-gpx" accept=".gpx" style="width:100%;padding:8px;border:1.5px dashed #c4b5fd;border-radius:10px;font-size:.78rem;background:#faf5ff;color:#1e293b">
+      <label>Race course file (FIT or GPX)</label>
+      <input type="file" id="race-gpx" accept=".gpx,.fit,.FIT" style="width:100%;padding:8px;border:1.5px dashed #c4b5fd;border-radius:10px;font-size:.78rem;background:#faf5ff;color:#1e293b">
       <div id="race-gpx-name" style="font-size:.7rem;color:#7c3aed;font-weight:700;margin:4px 0 8px"></div>
       <label>Surface / ride type</label>
       <select id="race-type" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.85rem;background:#fff;color:#1e293b;margin-bottom:8px">
@@ -1156,14 +1156,23 @@ document.getElementById('ride-run').addEventListener('click', async function(){
 });
 
 // ---- Race Planner: GPX + rival intel -> battle plan ----
-let RACE_GPX = '';
+let RACE_GPX = '', RACE_FIT_B64 = '';
 document.getElementById('race-gpx').addEventListener('change', function(){
   const f=this.files&&this.files[0]; const nm=document.getElementById('race-gpx-name');
-  if(!f){ RACE_GPX=''; nm.textContent=''; return; }
-  if(f.size>4_000_000){ nm.textContent='File too big (max ~4 MB) — export a simplified GPX.'; RACE_GPX=''; return; }
+  RACE_GPX=''; RACE_FIT_B64='';
+  if(!f){ nm.textContent=''; return; }
+  if(f.size>4_000_000){ nm.textContent='File too big (max ~4 MB) — export a simplified course.'; return; }
+  const isFit=/\.fit$/i.test(f.name);
   const rd=new FileReader();
-  rd.onload=e=>{ RACE_GPX=String(e.target.result||''); nm.textContent='✓ '+f.name+' loaded ('+Math.round(f.size/1024)+' KB)'; };
-  rd.readAsText(f);
+  rd.onload=e=>{
+    if(isFit){
+      const bytes=new Uint8Array(e.target.result); let bin='';
+      for(let i=0;i<bytes.length;i+=8192){ bin+=String.fromCharCode.apply(null, bytes.subarray(i,i+8192)); }
+      RACE_FIT_B64=btoa(bin);
+    } else { RACE_GPX=String(e.target.result||''); }
+    nm.textContent='✓ '+f.name+' loaded ('+Math.round(f.size/1024)+' KB'+(isFit?' · FIT':' · GPX')+')';
+  };
+  if(isFit) rd.readAsArrayBuffer(f); else rd.readAsText(f);
 });
 ['race-type','race-name','race-date'].forEach(function(id){
   document.getElementById(id).addEventListener('change',function(){ localStorage.setItem('kd_'+id.replace('-','_'), this.value); saveState(); });
@@ -1192,10 +1201,10 @@ function renderRacePlan(j){
 try{ const rp=JSON.parse(localStorage.getItem('kd_race_plan')||'null'); if(rp) renderRacePlan(rp); }catch(e){}
 document.getElementById('race-run').addEventListener('click', async function(){
   const st=document.getElementById('race-status');
-  if(!RACE_GPX){ st.textContent='Pick the race GPX file first.'; return; }
+  if(!RACE_GPX && !RACE_FIT_B64){ st.textContent='Pick the race course file (FIT or GPX) first.'; return; }
   st.textContent='Parsing course & building your battle plan (can take a minute)…'; this.disabled=true;
   try{
-    const body={ gpx:RACE_GPX, rideType:document.getElementById('race-type').value,
+    const body={ gpx:RACE_GPX, fitB64:RACE_FIT_B64, rideType:document.getElementById('race-type').value,
       raceName:document.getElementById('race-name').value, raceDate:document.getElementById('race-date').value,
       rivals:document.getElementById('race-rivals').value, context:CTX,
       lastRide:(localStorage.getItem('kd_ride_json')||'') };
