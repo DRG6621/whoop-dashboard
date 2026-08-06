@@ -341,7 +341,8 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
     <div>
       <label>Rival watch list <span style="font-weight:400;text-transform:none">(Strava profile links, one per line)</span></label>
       <textarea id="race-rival-list" rows="3" placeholder="https://www.strava.com/athletes/1084616  (Anthony Casini)&#10;https://www.strava.com/athletes/…" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.78rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5;margin-bottom:4px"></textarea>
-      <div style="font-size:.68rem;color:#94a3b8;margin-bottom:10px">Tell Claude <b>&ldquo;scout my rivals&rdquo;</b> &mdash; it opens each profile through your Strava login, pulls their recent numbers, and refreshes the intel below.</div>
+      <div style="font-size:.68rem;color:#94a3b8;margin-bottom:4px">Tell Claude <b>&ldquo;scout my rivals&rdquo;</b> &mdash; it opens each profile through your Strava login, pulls their recent numbers, and refreshes the intel below. (This page can't reach Strava itself &mdash; Claude does the browsing.)</div>
+      <div id="scout-status" style="font-size:.72rem;font-weight:700;margin-bottom:10px"></div>
       <label>Rival intel <span style="font-weight:400;text-transform:none">(names + what you know: strengths, results, watts if public)</span></label>
       <textarea id="race-rivals" rows="9" placeholder="e.g.&#10;John D — strong 20-min climber, won Lost River 45-49 last year, weak in technical descents&#10;Mike R — big engine on flats, fades after 3h, always attacks early" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.8rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5"></textarea>
       <div style="font-size:.68rem;color:#94a3b8;margin-top:4px">Strava keeps other riders' power data private, so this box is your scouting notebook &mdash; results pages, what you've seen in races, their public profile stats.</div>
@@ -973,6 +974,7 @@ function syncFields(){
   document.getElementById('race-date').value = localStorage.getItem('kd_race_date')||localStorage.getItem('kd_event_date')||'';
   document.getElementById('race-rivals').value = localStorage.getItem('kd_rivals')||'';
   document.getElementById('race-rival-list').value = localStorage.getItem('kd_rival_list')||'';
+  try{ updateScoutStatus(); }catch(e){}
   const savedPlan=localStorage.getItem('kd_meal_plan')||'';
   if(savedPlan){ document.getElementById('nutri-plan').innerHTML=mdLite(savedPlan); document.getElementById('nutri-actions').style.display='flex'; const t=localStorage.getItem('kd_meal_plan_t'); if(t){ try{ document.getElementById('nutri-status').textContent='Plan from '+new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }catch(e){} } }
   const savedRep=localStorage.getItem('kd_coach_report')||'';
@@ -1177,6 +1179,23 @@ document.getElementById('race-gpx').addEventListener('change', function(){
 ['race-type','race-name','race-date'].forEach(function(id){
   document.getElementById(id).addEventListener('change',function(){ localStorage.setItem('kd_'+id.replace('-','_'), this.value); saveState(); });
 });
+function updateScoutStatus(){
+  const el=document.getElementById('scout-status'); if(!el) return;
+  const list=(document.getElementById('race-rival-list').value||'');
+  const intel=(document.getElementById('race-rivals').value||'');
+  const ids=[...new Set((list.match(/(?:athletes|pros)\/(\d+)/g)||[]).map(s=>s.split('/')[1]))];
+  if(!ids.length){ el.textContent=''; return; }
+  const missing=ids.filter(id=>intel.indexOf(id)<0);
+  if(missing.length){
+    el.style.color='#d97706';
+    el.textContent='⚠ '+missing.length+' profile'+(missing.length>1?'s':'')+' on the list not scouted yet — tell Claude "scout my rivals".';
+  } else {
+    el.style.color='#16a34a';
+    el.textContent='✓ Intel covers everyone on the watch list.';
+  }
+}
+document.getElementById('race-rival-list').addEventListener('input',updateScoutStatus);
+document.getElementById('race-rivals').addEventListener('input',updateScoutStatus);
 document.getElementById('race-rivals').addEventListener('change',function(){ localStorage.setItem('kd_rivals', this.value); saveState(); });
 document.getElementById('race-rival-list').addEventListener('change',function(){ localStorage.setItem('kd_rival_list', this.value); saveState(); });
 function renderRacePlan(j){
