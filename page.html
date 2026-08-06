@@ -341,7 +341,11 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
     <div>
       <label>Rival watch list <span style="font-weight:400;text-transform:none">(Strava profile links, one per line)</span></label>
       <textarea id="race-rival-list" rows="3" placeholder="https://www.strava.com/athletes/1084616  (Anthony Casini)&#10;https://www.strava.com/athletes/…" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.78rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5;margin-bottom:4px"></textarea>
-      <div style="font-size:.68rem;color:#94a3b8;margin-bottom:4px">Tell Claude <b>&ldquo;scout my rivals&rdquo;</b> &mdash; it opens each profile through your Strava login, pulls their recent numbers, and refreshes the intel below. (This page can't reach Strava itself &mdash; Claude does the browsing.)</div>
+      <div style="display:flex;gap:8px;align-items:center;margin:2px 0 4px">
+        <button class="tb-btn" id="scout-btn" style="font-size:.72rem;padding:6px 12px">&#128269; Scout my rivals</button>
+        <span id="scout-btn-note" style="font-size:.66rem;color:#94a3b8">opens Claude with the request ready &mdash; hit send there</span>
+      </div>
+      <div style="font-size:.68rem;color:#94a3b8;margin-bottom:4px">Claude opens each profile through your Strava login, pulls their recent numbers, and refreshes the intel below. (This page can't reach Strava itself &mdash; Claude does the browsing.)</div>
       <div id="scout-status" style="font-size:.72rem;font-weight:700;margin-bottom:10px"></div>
       <label>Rival intel <span style="font-weight:400;text-transform:none">(names + what you know: strengths, results, watts if public)</span></label>
       <textarea id="race-rivals" rows="9" placeholder="e.g.&#10;John D — strong 20-min climber, won Lost River 45-49 last year, weak in technical descents&#10;Mike R — big engine on flats, fades after 3h, always attacks early" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.8rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5"></textarea>
@@ -1196,6 +1200,12 @@ function updateScoutStatus(){
 }
 document.getElementById('race-rival-list').addEventListener('input',updateScoutStatus);
 document.getElementById('race-rivals').addEventListener('input',updateScoutStatus);
+document.getElementById('scout-btn').addEventListener('click',function(){
+  const msg='scout my rivals';
+  try{ navigator.clipboard.writeText(msg); }catch(e){}
+  window.open('https://claude.ai/new?q='+encodeURIComponent(msg),'_blank');
+  document.getElementById('scout-btn-note').textContent='opened Claude — hit send there (also copied to clipboard)';
+});
 document.getElementById('race-rivals').addEventListener('change',function(){ localStorage.setItem('kd_rivals', this.value); saveState(); });
 document.getElementById('race-rival-list').addEventListener('change',function(){ localStorage.setItem('kd_rival_list', this.value); saveState(); });
 function renderRacePlan(j){
