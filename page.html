@@ -343,7 +343,7 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
       <textarea id="race-rival-list" rows="3" placeholder="https://www.strava.com/athletes/1084616  (Anthony Casini)&#10;https://www.strava.com/athletes/…" style="width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.78rem;background:#fff;color:#1e293b;font-family:inherit;resize:vertical;line-height:1.5;margin-bottom:4px"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin:2px 0 4px">
         <button class="tb-btn" id="scout-btn" style="font-size:.72rem;padding:6px 12px">&#128269; Scout my rivals</button>
-        <span id="scout-btn-note" style="font-size:.66rem;color:#94a3b8">opens Claude with the request ready &mdash; hit send there</span>
+        <span id="scout-btn-note" style="font-size:.66rem;color:#94a3b8">copies the request &mdash; paste it to Claude (desktop app)</span>
       </div>
       <div style="font-size:.68rem;color:#94a3b8;margin-bottom:4px">Claude opens each profile through your Strava login, pulls their recent numbers, and refreshes the intel below. (This page can't reach Strava itself &mdash; Claude does the browsing.)</div>
       <div id="scout-status" style="font-size:.72rem;font-weight:700;margin-bottom:10px"></div>
@@ -357,6 +357,15 @@ h1 .grad{background:linear-gradient(92deg,#818cf8 0%,#e879f9 50%,#fbbf24 100%);-
     <span id="race-status" style="font-size:.75rem;color:#64748b"></span>
   </div>
   <div id="race-out" style="margin-top:14px"></div>
+  <div style="margin-top:14px;border-top:1px solid #f1f5f9;padding-top:14px">
+    <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px">&#127937; Ask the Tactician</div>
+    <div id="race-msgs" style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <input id="race-q" placeholder="e.g. Where do I attack if Taylor drills it early? What if it rains?" style="flex:1;padding:9px 11px;border:1px solid #e2e8f0;border-radius:10px;font-size:.85rem;color:#1e293b;background:#fff">
+      <button class="tb-btn" id="race-send">Ask</button>
+    </div>
+    <div style="font-size:.66rem;color:#94a3b8;margin-top:6px">Knows your current race plan + rival intel. Race craft only &mdash; training changes go through Coach Bishop.</div>
+  </div>
 </div>
 
 <script>
@@ -1116,6 +1125,31 @@ async function askNutritionist(){
 document.getElementById('nutri-send').addEventListener('click',askNutritionist);
 document.getElementById('nutri-q').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); askNutritionist(); } });
 
+// Ask the Tactician — race-craft chat grounded in race plan + rival intel
+let raceHist=[];
+function raceMsg(role,text){
+  const b=document.createElement('div');
+  b.style.cssText='max-width:85%;padding:9px 12px;border-radius:12px;font-size:.85rem;line-height:1.5;'+(role==='user'?'align-self:flex-end;background:#6d28d9;color:#fff':'align-self:flex-start;background:#faf5ff;color:#4c1d95;border:1px solid #e9d5ff');
+  b.innerHTML=mdLite(text); document.getElementById('race-msgs').appendChild(b);
+  document.getElementById('race-msgs').scrollTop=1e6;
+}
+async function askTactician(){
+  const inp=document.getElementById('race-q'); const msg=inp.value.trim(); if(!msg) return;
+  inp.value=''; raceMsg('user',msg);
+  const typing=document.createElement('div'); typing.style.cssText='align-self:flex-start;color:#94a3b8;font-size:.8rem'; typing.textContent='Tactician is thinking…';
+  document.getElementById('race-msgs').appendChild(typing);
+  try{
+    let planX='';
+    try{ const rp=JSON.parse(localStorage.getItem('kd_race_plan')||'null'); if(rp){ planX=(JSON.stringify(rp.course)||'').slice(0,900)+'\n'+(rp.plan||'').slice(0,1700); } }catch(e){}
+    const j=await coachCall({type:'race',message:msg,history:raceHist.slice(-8),context:CTX,planExcerpt:planX,rivals:(localStorage.getItem('kd_rivals')||'').slice(0,2600)});
+    typing.remove();
+    if(j.error){ raceMsg('assistant','⚠️ '+j.error); }
+    else { raceMsg('assistant',j.text); raceHist.push({role:'user',content:msg}); raceHist.push({role:'assistant',content:j.text}); logCoach({type:'race', q:msg, text:j.text}); }
+  }catch(e){ typing.remove(); raceMsg('assistant','⚠️ Tactician unavailable right now.'); }
+}
+document.getElementById('race-send').addEventListener('click',askTactician);
+document.getElementById('race-q').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); askTactician(); } });
+
 // ---- Ride Analysis (race-engineer debrief) ----
 function renderRide(j){
   const out=document.getElementById('ride-out'); if(!j||!j.metrics){ out.innerHTML=''; return; }
@@ -1200,11 +1234,15 @@ function updateScoutStatus(){
 }
 document.getElementById('race-rival-list').addEventListener('input',updateScoutStatus);
 document.getElementById('race-rivals').addEventListener('input',updateScoutStatus);
-document.getElementById('scout-btn').addEventListener('click',function(){
-  const msg='scout my rivals';
-  try{ navigator.clipboard.writeText(msg); }catch(e){}
-  window.open('https://claude.ai/new?q='+encodeURIComponent(msg),'_blank');
-  document.getElementById('scout-btn-note').textContent='opened Claude — hit send there (also copied to clipboard)';
+document.getElementById('scout-btn').addEventListener('click',async function(){
+  const note=document.getElementById('scout-btn-note');
+  try{
+    await navigator.clipboard.writeText('scout my rivals');
+    note.textContent='✓ copied! Open the Claude app, paste, send. (Auto-scout also runs Wednesdays 8am.)';
+    note.style.color='#16a34a';
+  }catch(e){
+    note.textContent='Just tell Claude: "scout my rivals" (auto-scout runs Wednesdays 8am).';
+  }
 });
 document.getElementById('race-rivals').addEventListener('change',function(){ localStorage.setItem('kd_rivals', this.value); saveState(); });
 document.getElementById('race-rival-list').addEventListener('change',function(){ localStorage.setItem('kd_rival_list', this.value); saveState(); });

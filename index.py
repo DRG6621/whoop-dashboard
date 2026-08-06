@@ -670,6 +670,15 @@ def anthropic_call(system, messages, max_tokens=700, timeout=45):
     except Exception:
         return None, "Coach parse error"
 
+RACE_CHAT_SYSTEM = (
+    "You are Keith's race TACTICIAN (directeur sportif) chat, living inside his dashboard's Race Planner. "
+    "You know his current race plan and rival scouting intel (provided below when available). Answer race-craft "
+    "questions concretely: pacing, attacks, positioning, countering specific rivals, weather changes, equipment "
+    "for the surface, fueling timing. Cite his real numbers and the rivals' scouted numbers. If asked about a "
+    "rival not in the intel, say they haven't been scouted yet (the scout runs via Claude / Wednesdays 8am). "
+    "Short, punchy, coach-to-racer answers. Training-plan questions defer to Coach Jeremiah Bishop."
+)
+
 NUTRI_CHAT_SYSTEM = (
     "You are Keith's dedicated sports NUTRITIONIST (separate from his training coach). Your job: help him hit "
     "his target weight WITHOUT losing cycling power, using HIS coach's diet system below as the source of truth. "
@@ -718,7 +727,15 @@ def handle_coach(environ):
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": msg})
-    if req.get("type") == "nutrition":
+    if req.get("type") == "race":
+        sys = RACE_CHAT_SYSTEM + "\n\nCurrent athlete data:\n" + ctxt
+        plan = (req.get("planExcerpt") or "").strip()
+        if plan:
+            sys += "\n\nHis current race plan (course + strategy excerpt):\n" + plan[:2600]
+        rivals = (req.get("rivals") or "").strip()
+        if rivals:
+            sys += "\n\nRival scouting intel:\n" + rivals[:2600]
+    elif req.get("type") == "nutrition":
         sys = NUTRI_CHAT_SYSTEM + "\n\n" + DIET_KNOWLEDGE + "\n\nCurrent athlete data:\n" + ctxt
         plan = (req.get("planExcerpt") or "").strip()
         if plan:
